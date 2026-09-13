@@ -43,7 +43,13 @@ class riscv_instr_base_test:
         try:
             self._run_phase(num)
             return 0
-        except Exception as e:
+        except BaseException:
+            # Must be BaseException, not Exception: several pygen_src helpers
+            # abort with sys.exit(1), which raises SystemExit.  SystemExit does
+            # not derive from Exception, so it escaped this handler, killed the
+            # multiprocessing.Pool worker outright, and left pool.map() blocked
+            # forever -- the generator hung silently instead of reporting the
+            # error (observed: riscv_loop_test stuck for 21h with no output).
             traceback.print_exc()
             return 1
 
