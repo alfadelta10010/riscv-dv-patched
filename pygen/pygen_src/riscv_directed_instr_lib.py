@@ -89,6 +89,106 @@ class riscv_mem_access_stream(riscv_directed_instr_stream):
             self.insert_instr(instr)
 
 
+# Jump from one program to another (src/riscv_directed_instr_lib.sv,
+# riscv_jump_instr). Like a load/store, JALR needs a base register loaded with
+# the target address and an offset.
+#
+# instr_c's scalars (gpr, imm, mixed_instr_cnt, enable_branch) are drawn in
+# Python: the imm bound depends on the jump picked in the same step, which a
+# pyvsc constraint elaborated at construction cannot see. The operands of the
+# picked instructions are assigned directly for the same reason riscv_instr
+# templates are deep-copied: they are plain values once chosen.
+class riscv_jump_instr(riscv_directed_instr_stream):
+    def __init__(self):
+        super().__init__()
+        self.jump = None
+        self.addi = None
+        self.la = riscv_pseudo_instr()
+        self.branch = None
+        self.gpr = riscv_reg_t.ZERO
+        self.imm = 0
+        self.enable_branch = 0
+        self.mixed_instr_cnt = 0
+        self.stack_exit_instr = []
+        self.target_program_label = ""
+        self.idx = 0
+        self.use_jalr = 0
+
+    def gen_jump_instr(self):
+        # pre_randomize
+        if self.use_jalr:
+            self.jump = riscv_instr.get_instr(riscv_instr_name_t.JALR)
+        elif cfg.disable_compressed_instr or (int(cfg.ra) != riscv_reg_t.RA):
+            self.jump = riscv_instr.get_rand_instr(
+                include_instr=[riscv_instr_name_t.JAL, riscv_instr_name_t.JALR])
+        else:
+            self.jump = riscv_instr.get_rand_instr(
+                include_instr=[riscv_instr_name_t.JAL, riscv_instr_name_t.JALR,
+                               riscv_instr_name_t.C_JALR])
+        self.addi = riscv_instr.get_instr(riscv_instr_name_t.ADDI)
+        self.branch = riscv_instr.get_rand_instr(
+            include_instr=[riscv_instr_name_t.BEQ, riscv_instr_name_t.BNE,
+                           riscv_instr_name_t.BLT, riscv_instr_name_t.BGE,
+                           riscv_instr_name_t.BLTU, riscv_instr_name_t.BGEU])
+        jump_name = riscv_instr_name_t(int(self.jump.instr_name))
+        # instr_c
+        reserved = [int(r) for r in cfg.reserved_regs]
+        self.gpr = random.choice([r for r in riscv_reg_t
+                                  if r != riscv_reg_t.ZERO and int(r) not in reserved])
+        if jump_name in (riscv_instr_name_t.C_JR, riscv_instr_name_t.C_JALR):
+            self.imm = 0
+        else:
+            self.imm = random.randint(-1023, 1023)
+        self.mixed_instr_cnt = random.randint(5, 10)
+        self.enable_branch = random.randint(0, 1)
+        # post_randomize
+        ra = riscv_reg_t(int(cfg.ra))
+        self.jump.rd = ra            # if (has_rd)  rd == cfg.ra
+        self.jump.rs1 = self.gpr     # if (has_rs1) rs1 == gpr
+        self.addi.rd = self.gpr
+        self.addi.rs1 = self.gpr
+        self.branch.rs1 = random.choice(list(riscv_reg_t))
+        self.branch.rs2 = random.choice(list(riscv_reg_t))
+        self.la.pseudo_instr_name = riscv_pseudo_instr_name_t.LA
+        self.la.imm_str = self.target_program_label
+        self.la.rd = self.gpr
+        # Generate some random instructions to mix with jump instructions
+        self.reserved_rd = [self.gpr]
+        self.initialize_instr_list(self.mixed_instr_cnt)
+        self.gen_instr(1)
+        if jump_name in (riscv_instr_name_t.JALR, riscv_instr_name_t.C_JALR):
+            # JALR is expected to set lsb to 0
+            self.addi.imm_str = "{}".format(self.imm + random.randint(0, 1))
+        else:
+            self.addi.imm_str = "{}".format(self.imm)
+        if getattr(cfg, "enable_misaligned_instr", 0):
+            # Jump to a misaligned address
+            self.jump.imm_str = "{}".format(-self.imm + 2)
+        else:
+            self.jump.imm_str = "{}".format(-self.imm)
+        # The branch is placed after la/addi/stack exit (mix_instr_stream keeps
+        # the list order), so taking it cannot skip loading the jump base.
+        instr = [self.branch] if self.enable_branch else []
+        # Restore stack before unconditional jump
+        if ra == riscv_reg_t.ZERO or jump_name == riscv_instr_name_t.C_JR:
+            instr = list(self.stack_exit_instr) + instr
+        if jump_name == riscv_instr_name_t.JAL:
+            self.jump.imm_str = self.target_program_label
+        else:
+            instr = [self.la, self.addi] + instr
+        self.mix_instr_stream(instr)
+        self.instr_list.append(self.jump)
+        for i in range(len(self.instr_list)):
+            self.instr_list[i].has_label = 0
+            self.instr_list[i].atomic = 1
+        self.jump.has_label = 1
+        self.jump.label = "{}_j{}".format(self.label, self.idx)
+        self.jump.comment = "jump {} -> {}".format(self.label, self.target_program_label)
+        self.branch.imm_str = self.jump.label
+        self.branch.comment = "branch to jump instr"
+        self.branch.branch_assigned = 1
+
+
 # Stress back to back jump instruction
 @vsc.randobj
 class riscv_jal_instr(riscv_rand_instr_stream):

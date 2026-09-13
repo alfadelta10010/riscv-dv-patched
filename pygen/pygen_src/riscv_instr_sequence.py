@@ -19,7 +19,8 @@ from collections import defaultdict
 from pygen_src.riscv_instr_gen_config import cfg
 from pygen_src.riscv_instr_stream import riscv_rand_instr_stream
 from pygen_src.riscv_illegal_instr import riscv_illegal_instr, illegal_instr_type_e
-from pygen_src.riscv_directed_instr_lib import riscv_pop_stack_instr, riscv_push_stack_instr
+from pygen_src.riscv_directed_instr_lib import (riscv_pop_stack_instr, riscv_push_stack_instr,
+                                                riscv_jump_instr)
 from pygen_src.riscv_instr_pkg import (pkg_ins, riscv_instr_name_t, riscv_reg_t,
                                        riscv_instr_category_t)
 rcs = import_module("pygen_src.target." + cfg.argv.target + ".riscv_core_setting")
@@ -206,21 +207,18 @@ class riscv_instr_sequence:
     # The jump routine is implmented with an atomic instruction stream(riscv_jump_instr). Similar
     # to load/store instructions, JALR/JAL instructions also need a proper base address and offset
     # as the jump target.
-    def insert_jump_instr(self):
-        # TODO riscv_jump_instr class implementation
-        """
+    def insert_jump_instr(self, target_label, idx):
         jump_instr = riscv_jump_instr()
         jump_instr.target_program_label = target_label
-        if(not self.is_main_program):
+        if not self.is_main_program:
             jump_instr.stack_exit_instr = self.instr_stack_exit.pop_stack_instr
         jump_instr.label = self.label_name
         jump_instr.idx = idx
         jump_instr.use_jalr = self.is_main_program
-        jump_instr.randomize()
+        jump_instr.gen_jump_instr()
         self.instr_stream.insert_instr_stream(jump_instr.instr_list)
-        logging.info("{} -> {}...done".format(jump_instr.jump.instr_name.name, target_label))
-        """
-        pass
+        logging.info("{} -> {}...done".format(
+            riscv_instr_name_t(int(jump_instr.jump.instr_name)).name, target_label))
 
     # Convert the instruction stream to the string format.
     # Label is attached to the instruction if available, otherwise attach proper space to make
