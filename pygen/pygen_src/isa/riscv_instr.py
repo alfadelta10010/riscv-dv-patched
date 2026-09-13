@@ -353,12 +353,14 @@ class riscv_instr:
                         disallowed_set.add(riscv_instr_name_t[item])
                 elif isinstance(item, riscv_instr_name_t):
                     disallowed_set.add(item)
+            # src/isa/riscv_instr.sv randomizes name inside instr_names, and
+            # inside include_instr and allowed_instr when each is non-empty --
+            # the intersection, not whichever list is non-empty first.
+            candidates = list(cls.instr_names)
+            if len(include_instr) > 0:
+                candidates = [i for i in candidates if i in include_instr]
             if len(allowed_instr) > 0:
-                candidates = allowed_instr
-            elif len(include_instr) > 0:
-                candidates = include_instr
-            else:
-                candidates = cls.instr_names
+                candidates = [i for i in candidates if i in allowed_instr]
             candidates = [i for i in candidates if i not in disallowed_set]
             try:
                 name = random.choice(candidates)
