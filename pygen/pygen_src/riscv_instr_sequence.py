@@ -339,6 +339,12 @@ class riscv_instr_sequence:
                 return True
             except Exception:
                 continue
-        logging.warning("Could not randomize riscv_illegal_instr in %0d attempts; "
-                        "skipping one injected instruction", max_attempts)
-        return False
+        # Every attempt failed, which is the normal case under the pinned
+        # pyvsc rather than the exception -- so skipping here meant the two
+        # streams named for this stimulus emitted none of it, in every
+        # program. Fall back to a hand-rolled draw instead; see
+        # riscv_illegal_instr.fallback_draw().
+        logging.info("riscv_illegal_instr did not solve in %0d attempts; "
+                     "using the fallback draw", max_attempts)
+        self.illegal_instr.fallback_draw(want_hint=equal)
+        return True
