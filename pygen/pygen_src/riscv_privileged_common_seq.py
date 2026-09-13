@@ -23,14 +23,18 @@ rcs = import_module("pygen_src.target." + cfg.argv.target + ".riscv_core_setting
 # This class provides some common routines for privileged mode operations
 @vsc.randobj
 class riscv_privileged_common_seq():
-    def __init___(self):
+    def __init__(self):
         self.hart = 0
-        self.mstatus = vsc.attr(riscv_privil_reg)
-        self.mie = vsc.attr(riscv_privil_reg)
-        self.sstatus = vsc.attr(riscv_privil_reg)
-        self.sie = vsc.attr(riscv_privil_reg)
-        self.ustatus = vsc.attr(riscv_privil_reg)
-        self.uie = vsc.attr(riscv_privil_reg)
+        # src/riscv_privileged_common_seq.sv: the register handles are plain
+        # (non-rand) members created by the setup_*_reg() functions; only
+        # mstatus_mie is random.
+        self.mstatus = None
+        self.mstatus_mie = vsc.rand_bit_t(1)
+        self.mie = None
+        self.sstatus = None
+        self.sie = None
+        self.ustatus = None
+        self.uie = None
 
     def enter_privileged_mode(self, mode, instrs):
         label = pkg_ins.format_string("{}init_{}:"
@@ -129,9 +133,14 @@ class riscv_privileged_common_seq():
         # Set the previous privileged mode as the target mode
         self.mstatus.set_field("MPP", mode.value)
         self.mstatus.set_field("SPP", 0)
-        # Enable Interrupt
-        self.mstatus.set_field("MPIE", cfg.enable_interrupt)
-        self.mstatus.set_field("MIE", cfg.enable_interrupt)
+        # Enable interrupt
+        # Only machine mode requires mstatus.MIE to be 1 for enabling interrupt
+        if mode == privileged_mode_t.MACHINE_MODE:
+            self.mstatus.set_field("MPIE", cfg.enable_interrupt)
+        else:
+            self.mstatus.set_field("MPIE", cfg.enable_interrupt & self.mstatus_mie)
+        # MIE is set when returning with mret, avoids trapping before returning
+        self.mstatus.set_field("MIE", 0)
         self.mstatus.set_field("SPIE", cfg.enable_interrupt)
         self.mstatus.set_field("SIE", cfg.enable_interrupt)
         self.mstatus.set_field("UPIE", cfg.enable_interrupt)
