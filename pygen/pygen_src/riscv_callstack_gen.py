@@ -57,12 +57,14 @@ class riscv_program:
 @vsc.randobj
 class riscv_callstack_gen:
     def __init__(self):
-        # Number of programs in the call stack
-        self.program_cnt = vsc.int_t(10)
+        # Number of programs in the call stack. SV: `int program_cnt = 10`.
+        # pyvsc's int_t/bit_t take (width, init), so vsc.int_t(10) would be a
+        # 10-bit field holding 0; give the width and the value explicitly.
+        self.program_cnt = vsc.bit_t(8, 10)
         # Handles of all programs
         self.program_h = []
-        # Maximum call stack level
-        self.max_stack_level = vsc.int_t(50)
+        # Maximum call stack level. SV: `int max_stack_level = 50`.
+        self.max_stack_level = vsc.bit_t(8, 50)
         # Call stack level of each program
         self.stack_level = vsc.randsz_list_t(vsc.bit_t(11))
 
