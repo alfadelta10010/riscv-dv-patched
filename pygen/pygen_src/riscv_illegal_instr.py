@@ -99,6 +99,9 @@ class riscv_illegal_instr:
                   vsc.weight(illegal_instr_type_e.kHintInstr, 3),
                   vsc.weight(illegal_instr_type_e.kIllegalSystemInstr, 3)
                   ])
+        if riscv_instr_group_t.RV32C not in rcs.supported_isa:
+            self.exception != illegal_instr_type_e.kHintInstr
+            self.compressed == 0
 
     @vsc.constraint
     def instr_bit_assignment_c(self):
