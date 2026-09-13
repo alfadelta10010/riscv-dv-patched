@@ -674,8 +674,9 @@ class riscv_asm_program_gen:
 
     # Handles creation of a subroutine to initialize any custom CSRs
     def setup_custom_csrs(self, hart):
-        # TODO
-        pass
+        instr = []
+        self.init_custom_csr(instr)
+        self.gen_section(pkg_ins.get_label("custom_csr_setup", hart), instr)
 
     # This function should be overridden in the riscv_asm_program_gen extended class
     # corresponding to the RTL implementation if it has any custom CSRs defined.
@@ -684,8 +685,7 @@ class riscv_asm_program_gen:
     # the instruction strings to set up any custom CSRs and then to push those strings
     # into the instr queue.
     def init_custom_csr(self, instr):
-        # TODO
-        pass
+        instr.append("nop")
 
     # ---------------------------------------------------------------------------------------
     # Privileged CSR setup for interrupt and exception handling and delegation
