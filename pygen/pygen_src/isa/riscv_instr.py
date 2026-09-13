@@ -299,19 +299,20 @@ class riscv_instr:
 
         # TODO Randomization logic needs to be frame with PyVSC library
         if len(disallowed_instr) == 0:
+            # random.randrange(0, n - 1) yields 0..n-2, so the last entry of
+            # each of these lists was unreachable: one instruction was silently
+            # excluded from the generator. It also raises ValueError for a
+            # single-element list -- the include_instr branch worked around
+            # that with a special case while the other two did not, and the
+            # handler below turns it into a fatal "Cannot generate random
+            # instruction" rather than the single choice that was intended.
             try:
                 if len(include_instr) > 0:
-                    if len(include_instr) == 1:
-                        idx = 0
-                    else:
-                        idx = random.randrange(0, len(include_instr) - 1)
-                    name = include_instr[idx]
+                    name = include_instr[random.randrange(len(include_instr))]
                 elif len(allowed_instr) > 0:
-                    idx = random.randrange(0, len(allowed_instr) - 1)
-                    name = allowed_instr[idx]
+                    name = allowed_instr[random.randrange(len(allowed_instr))]
                 else:
-                    idx = random.randrange(0, len(cls.instr_names) - 1)
-                    name = cls.instr_names[idx]
+                    name = cls.instr_names[random.randrange(len(cls.instr_names))]
             except Exception:
                 logging.critical("[%s] Cannot generate random instruction", riscv_instr.__name__)
                 sys.exit(1)
@@ -355,7 +356,12 @@ class riscv_instr:
         if len(load_store_instr) == 0:
             load_store_instr = cls.instr_category["LOAD"] + \
                 cls.instr_category["STORE"]
-        cls.idx = random.randrange(0, len(load_store_instr) - 1)
+        # Same off-by-one, and it bites hardest here: gen_load_store_instr()
+        # builds allowed_instr in alignment order and appends the widest legal
+        # access last, so the widest access for each address was never chosen.
+        # For an address where only [LB, LBU, SB] is legal, that removed SB and
+        # left the stream unable to emit a byte store at all.
+        cls.idx = random.randrange(len(load_store_instr))
         name = load_store_instr[cls.idx]
         instr_h = copy.copy(cls.instr_template[name])
         return instr_h

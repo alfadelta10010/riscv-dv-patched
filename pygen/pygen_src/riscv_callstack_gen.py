@@ -128,7 +128,9 @@ class riscv_callstack_gen:
             # Make sure all program has a caller so that no program is obsolete.
 
             for j in range(len(sub_program_id_pool)):
-                caller_id = random.randrange(0, len(sub_program_cnt) - 1)
+                # randrange(0, n - 1) never returns n - 1, so the last
+                # program at this level could never be chosen as a caller.
+                caller_id = random.randrange(len(sub_program_cnt))
                 sub_program_cnt[caller_id] += 1
 
             for j in range(len(program_list)):

@@ -270,7 +270,9 @@ class riscv_instr_sequence:
             jump_instr.append(riscv_instr_name_t.C_JR)
             if not (riscv_reg_t.RA in cfg.reserved_regs):
                 jump_instr.append(riscv_instr_name_t.C_JALR)
-        i = random.randrange(0, len(jump_instr) - 1)
+        # randrange(0, n - 1) never returns n - 1, so the last jump form added
+        # above -- C_JALR when RA is free, otherwise C_JR -- was never picked.
+        i = random.randrange(len(jump_instr))
         if jump_instr[i] == riscv_instr_name_t.C_JALR:
             routine_str = prefix + "c.jalr x{}".format(ra.get_val())
         elif jump_instr[i] == riscv_instr_name_t.C_JR:
