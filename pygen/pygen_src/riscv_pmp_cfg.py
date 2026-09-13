@@ -8,14 +8,12 @@ none of the --pmp_* options existed, so run.py rejected them at argparse with
 
 Scope of this port, and why:
 
-  * The deterministic path only -- pmp_randomize = 1 is rejected with a clear
-    message rather than silently generating nothing. The SystemVerilog
-    randomized path is ~90 lines of interlocking constraints over a dynamically
-    sized array (sanity_c, xwr_c, address_modes_c, grain_addr_mode_c,
-    addr_range_c, modes_before_addr_c, addr_legal_tor_c, addr_napot_mode_c,
-    addr_na4_mode_c), which is the shape pyvsc handles worst, and a subtly
-    wrong PMP region set produces access faults that look like RTL bugs. The
-    directed path is what a testlist entry with explicit +pmp_region_N asks for.
+  * Both the directed path (+pmp_region_<i>) and pmp_randomize = 1. The SV
+    randomized path is interlocking constraints over a dynamically sized
+    array (sanity_c, xwr_c, allow_high_addrs_c, address_modes_c,
+    grain_addr_mode_c, addr_range_c, modes_before_addr_c, addr_legal_tor_c,
+    addr_napot_mode_c, addr_na4_mode_c) -- the shape pyvsc handles worst --
+    so randomize() draws each region in the SV solve order in plain Python.
 
   * No ePMP. riscv_instr_pkg::support_epmp gates roughly 150 lines of
     gen_pmp_instr, all of it writing mseccfg for Smepmp. FyraCore does not
@@ -57,6 +55,8 @@ class pmp_cfg_reg_t:
         self.r = 0
         self.addr = 0
         self.offset = 0
+        # NAPOT region size / TOR overlap control, as in the SV struct.
+        self.addr_mode = 0
 
     def to_byte(self):
         return ((self.l & 0x1) << 7 | (self.a.value & 0x3) << 3 |
@@ -73,8 +73,13 @@ class riscv_pmp_cfg:
         self.pmp_num_regions = 1
         # Default granularity of 0, i.e. a 4-byte grain.
         self.pmp_granularity = 0
+        self.pmp_num_regions_given = 0
         self.pmp_randomize = 0
         self.pmp_allow_illegal_tor = 0
+        # Allow regions above the 32-bit address space when XLEN == 32, in
+        # high_addr_proportion percent of randomized configurations.
+        self.allow_high_addrs = 0
+        self.high_addr_proportion = 10
         self.enable_write_pmp_csr = 0
         self.suppress_pmp_setup = 0
         self.pmp_max_offset = (1 << self.xlen) - 1
@@ -95,15 +100,74 @@ class riscv_pmp_cfg:
     def initialize(self, signature_addr):
         self.end_signature_addr = signature_addr - 0x4
         if self.pmp_randomize:
-            logging.critical(
-                "pmp_randomize is not supported by the pyflow PMP port. Drive "
-                "the regions explicitly with +pmp_num_regions and "
-                "+pmp_region_<i>=... instead.")
-            sys.exit(1)
+            self.randomize()
+            return
         self.pmp_cfg = [pmp_cfg_reg_t() for _ in range(self.pmp_num_regions)]
         self.pmp_cfg_addr_valid = [0] * self.pmp_num_regions
         self.pmp_cfg_already_configured = [0] * self.pmp_num_regions
         self.set_defaults()
+        self.setup_pmp()
+
+    # ------------------------------------------------------------------
+    # Randomization (pmp_randomize = 1)
+    # ------------------------------------------------------------------
+    def randomize(self):
+        """Draw pmp_cfg[] satisfying the SV constraint blocks, then apply
+        command-line overrides as the SV post_randomize() does.
+
+        Each constraint is applied per region in the SV solve order
+        (allow_high_addrs, then a and addr_mode, then addr):
+          sanity_c           pmp_num_regions in [1:16] unless given
+          xwr_c              never W=1 with R=0 (no ePMP, so mml = 0)
+          allow_high_addrs_c 1 in high_addr_proportion %, always 1 on RV64
+          address_modes_c    addr_mode in [0 : XLEN-3], or [0 : XLEN] if high
+          grain_addr_mode_c  granularity >= 1 excludes NA4
+          addr_range_c       offset[0] = 0, others in [1 : pmp_max_offset]
+          addr_legal_tor_c   TOR above the previous entry's addr (unless
+                             pmp_allow_illegal_tor and addr_mode == 0);
+                             addr[31:29] == 0 unless high addresses
+          addr_napot_mode_c  low addr_mode bits all ones, the next bit zero
+          addr_na4_mode_c    addr[31:29] == 0 unless high addresses
+        """
+        if not self.pmp_num_regions_given:
+            self.pmp_num_regions = random.randint(1, 16)
+        n = self.pmp_num_regions
+        self.pmp_cfg = [pmp_cfg_reg_t() for _ in range(n)]
+        self.pmp_cfg_addr_valid = [0] * n
+        self.pmp_cfg_already_configured = [0] * n
+        if self.xlen == 64:
+            self.allow_high_addrs = 1
+        else:
+            self.allow_high_addrs = int(random.randrange(100) < self.high_addr_proportion)
+        max_mode = self.xlen if self.allow_high_addrs else self.xlen - 3
+        addr_max = ((1 << self.xlen) - 1 if self.allow_high_addrs
+                    else (1 << (self.xlen - 3)) - 1)
+        prev_addr = 0
+        for i, region in enumerate(self.pmp_cfg):
+            region.l = random.randint(0, 1)
+            region.x = random.randint(0, 1)
+            region.r, region.w = random.choice([(0, 0), (1, 0), (1, 1)])
+            region.offset = 0 if i == 0 else random.randint(1, self.pmp_max_offset)
+            region.addr_mode = random.randint(0, max_mode)
+            tor_ordered = (i > 0 and (not self.pmp_allow_illegal_tor or region.addr_mode > 0))
+            modes = list(pmp_addr_mode_t)
+            if self.pmp_granularity >= 1:
+                modes.remove(pmp_addr_mode_t.NA4)
+            if tor_ordered and prev_addr >= addr_max:
+                modes.remove(pmp_addr_mode_t.TOR)
+            region.a = random.choice(modes)
+            if region.a == pmp_addr_mode_t.NAPOT:
+                m = region.addr_mode
+                if m >= self.xlen:
+                    region.addr = (1 << self.xlen) - 1
+                else:
+                    ones = (1 << m) - 1
+                    region.addr = (random.randint(0, (addr_max - ones) >> (m + 1)) << (m + 1)) | ones
+            elif region.a == pmp_addr_mode_t.TOR and tor_ordered:
+                region.addr = random.randint(prev_addr + 1, addr_max)
+            else:
+                region.addr = random.randint(0, addr_max)
+            prev_addr = region.addr
         self.setup_pmp()
 
     def set_defaults(self):
@@ -216,8 +280,8 @@ class riscv_pmp_cfg:
             pmp_word = pmp_word | (cfg_byte << ((i % self.cfg_per_csr) * 8))
             # Only set the address if it was not already configured above.
             if not self.pmp_cfg_already_configured[i] or self.pmp_cfg_addr_valid[i]:
-                if self.pmp_cfg_addr_valid[i]:
-                    # An address was supplied by the test.
+                if self.pmp_cfg_addr_valid[i] or self.pmp_randomize:
+                    # An address was supplied by the test, or randomized.
                     instr.append("li x{}, {}".format(scratch_reg[0],
                                                      hex(region.addr)))
                     instr.append("csrw {}, x{}".format(

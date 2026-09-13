@@ -536,7 +536,10 @@ class riscv_instr_gen_config:
             return
         from pygen_src.riscv_pmp_cfg import riscv_pmp_cfg
         self.pmp_cfg = riscv_pmp_cfg(rcs.XLEN)
-        self.pmp_cfg.pmp_num_regions = self.argv.pmp_num_regions
+        # SV: pmp_num_regions stays random unless given on the command line.
+        if self.argv.pmp_num_regions is not None:
+            self.pmp_cfg.pmp_num_regions = self.argv.pmp_num_regions
+            self.pmp_cfg.pmp_num_regions_given = 1
         self.pmp_cfg.pmp_granularity = self.argv.pmp_granularity
         self.pmp_cfg.pmp_randomize = self.argv.pmp_randomize
         self.pmp_cfg.pmp_allow_illegal_tor = self.argv.pmp_allow_illegal_tor
@@ -544,7 +547,7 @@ class riscv_instr_gen_config:
         self.pmp_cfg.suppress_pmp_setup = self.argv.suppress_pmp_setup
         if self.argv.pmp_max_offset:
             self.pmp_cfg.pmp_max_offset = int(self.argv.pmp_max_offset, 16)
-        for i in range(self.pmp_cfg.pmp_num_regions):
+        for i in range(16):
             region = getattr(self.argv, 'pmp_region_{}'.format(i), "")
             if region:
                 self.pmp_cfg.pmp_region_args[i] = region
@@ -738,7 +741,7 @@ class riscv_instr_gen_config:
         # without them "unrecognized arguments: --pmp_randomize=0" killed
         # riscv_pmp_test before the generator ever started.
         parse.add_argument('--pmp_num_regions', help='pmp_num_regions',
-                           type=int, default=1)
+                           type=int, default=None)
         parse.add_argument('--pmp_granularity', help='pmp_granularity',
                            type=int, default=0)
         parse.add_argument('--pmp_randomize', help='pmp_randomize',
