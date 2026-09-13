@@ -20,7 +20,8 @@ from pygen_src.riscv_instr_stream import riscv_rand_instr_stream
 from pygen_src.isa.riscv_instr import riscv_instr
 from pygen_src.riscv_instr_gen_config import cfg
 from pygen_src.riscv_instr_pkg import (riscv_reg_t, riscv_pseudo_instr_name_t,
-                                       riscv_instr_name_t, mem_region_t, pkg_ins)
+                                       riscv_instr_name_t, riscv_instr_category_t,
+                                       mem_region_t, pkg_ins)
 from pygen_src.riscv_pseudo_instr import riscv_pseudo_instr
 rcs = import_module("pygen_src.target." + cfg.argv.target + ".riscv_core_setting")
 
@@ -282,7 +283,7 @@ class riscv_push_stack_instr(riscv_rand_instr_stream):
             self.enable_branch = 0
         if self.enable_branch:
             self.branch_instr = \
-                riscv_instr.get_rand_instr(include_category=[riscv_instr_name_t.BRANCH.name])
+                riscv_instr.get_rand_instr(include_category=[riscv_instr_category_t.BRANCH.name])
             self.branch_instr.randomize()
             self.branch_instr.imm_str = self.push_start_label
             self.branch_instr.brach_assigned = 1
