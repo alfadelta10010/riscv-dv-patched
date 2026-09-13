@@ -50,9 +50,8 @@ class riscv_reg_field:
             self, self.bit_width, hex(self.val), self.access_type))
 
     def post_randomize(self):
-        mask = vsc.bit_t(rcs.XLEN, 2**rcs.XLEN - 1)
-        mask = mask >> (rcs.XLEN - self.bit_width)
-        self.val = mask & self.val
+        mask = (2**rcs.XLEN - 1) >> (rcs.XLEN - int(self.bit_width))
+        self.val = mask & int(self.val)
 
 
 # Base class for RISC-V register
