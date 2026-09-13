@@ -234,21 +234,24 @@ class riscv_asm_program_gen:
         if num_sub_program != 0:
             callstack_gen = riscv_callstack_gen()
             callstack_gen.init(num_sub_program + 1)
-            if callstack_gen.randomize():
-                idx = 0
-                # Insert the jump instruction based on the call stack
-                for i in range(len(callstack_gen.program_h)):
-                    for j in range(len(callstack_gen.program_h.sub_program_id)):
-                        idx += 1
-                        pid = callstack_gen.program_id[i].sub_program_id[j] - 1
-                        logging.info("Gen jump instr %0s -> sub[%0d] %0d", i, j, pid + 1)
-                        if(i == 0):
-                            self.main_program[i].insert_jump_instr(sub_program_name[pid], idx)
-                        else:
-                            self.sub_program[i - 1].insert_jump_instr(sub_program_name[pid], idx)
-            else:
-                logging.critical("Failed to generate callstack")
+            # pyvsc's randomize() returns None and raises on failure, so the SV
+            # `if (callstack_gen.randomize())` could only ever take the else arm.
+            try:
+                callstack_gen.randomize()
+            except Exception as e:
+                logging.critical("Failed to generate callstack: %s", e)
                 sys.exit(1)
+            idx = 0
+            # Insert the jump instruction based on the call stack
+            for i in range(len(callstack_gen.program_h)):
+                for j in range(len(callstack_gen.program_h[i].sub_program_id)):
+                    idx += 1
+                    pid = int(callstack_gen.program_h[i].sub_program_id[j]) - 1
+                    logging.info("Gen jump instr %0d -> sub[%0d] %0d", i, j, pid + 1)
+                    if i == 0:
+                        main_program.insert_jump_instr(sub_program_name[pid], idx)
+                    else:
+                        sub_program[i - 1].insert_jump_instr(sub_program_name[pid], idx)
         logging.info("Randomizing call stack..done")
 
     def insert_sub_program(self, sub_program, instr_list):
