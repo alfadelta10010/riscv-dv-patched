@@ -379,8 +379,8 @@ class riscv_instr_gen_config:
 
     @vsc.constraint
     def ra_c(self):
-        self.ra != riscv_reg_t.SP
-        self.ra != riscv_reg_t.TP
+        self.ra != self.sp
+        self.ra != self.tp
         self.ra != riscv_reg_t.ZERO
 
     @vsc.constraint
