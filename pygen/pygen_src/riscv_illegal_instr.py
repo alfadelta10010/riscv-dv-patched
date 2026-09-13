@@ -221,20 +221,30 @@ class riscv_illegal_instr:
     @vsc.constraint
     def hint_instr_c(self):
         with vsc.if_then(self.exception == illegal_instr_type_e.kHintInstr):
-            ((self.c_msb == 0) and (self.c_op == 1) and (self.instr_bin[12] +
-                                                         self.instr_bin[6:2] == 0)) or \
-                ((self.c_msb == 2) and (self.c_op == 1) and (self.instr_bin[11:7] == 0)) or \
-                ((self.c_msb == 4) and (self.c_op == 1) and (self.instr_bin[12:11] == 0) and
-                 (self.instr_bin[6:2] == 0)) or \
-                ((self.c_msb == 4) and (self.c_op == 2) and (self.instr_bin[11:7] == 0) and
-                 (self.instr_bin[6:2] != 0)) or \
-                ((self.c_msb == 3) and (self.c_op == 1) and (self.instr_bin[11:7] == 0) and
-                 (self.instr_bin[12] + self.instr_bin[6:2]) != 0) or \
-                ((self.c_msb == 0) and (self.c_op == 2) and (self.instr_bin[11:7] == 0)) or \
-                ((self.c_msb == 0) and (self.c_op == 2) and (self.instr_bin[11:7] != 0) and
-                 not(self.instr_bin[12]) and (self.instr_bin[6:2] == 0)) or \
-                ((self.c_msb == 4) and (self.c_op == 2) and (self.instr_bin[11:7] == 0) and
-                 self.instr_bin[12] and (self.instr_bin[6:2] != 0))
+            (
+                # C.ADDI
+                ((self.c_msb == 0) & (self.c_op == 1) &
+                 (self.instr_bin[12] == 0) & (self.instr_bin[6:2] == 0)) |
+                # C.LI
+                ((self.c_msb == 2) & (self.c_op == 1) & (self.instr_bin[11:7] == 0)) |
+                # C.SRAI64, C.SRLI64
+                ((self.c_msb == 4) & (self.c_op == 1) & (self.instr_bin[12:11] == 0) &
+                 (self.instr_bin[6:2] == 0)) |
+                # C.MV
+                ((self.c_msb == 4) & (self.c_op == 2) & (self.instr_bin[11:7] == 0) &
+                 (self.instr_bin[6:2] != 0)) |
+                # C.LUI
+                ((self.c_msb == 3) & (self.c_op == 1) & (self.instr_bin[11:7] == 0) &
+                 ((self.instr_bin[12] != 0) | (self.instr_bin[6:2] != 0))) |
+                # C.SLLI
+                ((self.c_msb == 0) & (self.c_op == 2) & (self.instr_bin[11:7] == 0)) |
+                # C.SLLI64
+                ((self.c_msb == 0) & (self.c_op == 2) & (self.instr_bin[11:7] != 0) &
+                 (self.instr_bin[12] == 0) & (self.instr_bin[6:2] == 0)) |
+                # C.ADD
+                ((self.c_msb == 4) & (self.c_op == 2) & (self.instr_bin[11:7] == 0) &
+                 (self.instr_bin[12] == 1) & (self.instr_bin[6:2] != 0))
+            )
 
     @vsc.constraint
     def illegal_opcode_c(self):
