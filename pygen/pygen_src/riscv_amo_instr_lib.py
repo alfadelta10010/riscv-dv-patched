@@ -151,12 +151,15 @@ class riscv_lr_sc_instr_stream (riscv_amo_base_instr_stream):
     '''
     def add_mixed_instr(self, instr_cnt):
         self.setup_allowed_instr(no_branch = 1, no_load_store = 1)
-        for i in range(instr_cnt):
+        i = 0
+        while i < int(instr_cnt):
             instr = riscv_instr()
             instr = self.randomize_instr(instr, include_group = [riscv_instr_group_t.RV32I,
                                                                  riscv_instr_group_t.RV32C])
-            if instr.category not in [riscv_instr_category_t.SYSTEM, riscv_instr_category_t.SYNCH]:
+            category = riscv_instr_category_t(int(instr.category))
+            if category not in [riscv_instr_category_t.SYSTEM, riscv_instr_category_t.SYNCH]:
                 self.insert_instr(instr)
+                i += 1
 
 
 @vsc.randobj
