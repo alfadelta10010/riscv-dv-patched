@@ -424,14 +424,18 @@ class riscv_pmp_cfg:
             "srli x{}, x{}, 2".format(s[4], s[4]),
             "bne x{}, x{}, 18b".format(s[0], s[4]),
             "j 26f",
+            # NAPOT: pmpaddr's trailing ones encode the region size, so mask
+            # them (and the zero above them) off both pmpaddr and mtval >> 2.
+            # y ^ (y + 1) is that mask. The SV masks only pmp_granularity
+            # bits, so a fault inside any NAPOT region wider than one grain
+            # never matched its entry.
             "25: csrr x{}, {}".format(s[0], mtval),
             "srli x{}, x{}, 2".format(s[0], s[0]),
-            "srli x{}, x{}, {}".format(s[0], s[0], self.pmp_granularity),
-            "slli x{}, x{}, {}".format(s[0], s[0], self.pmp_granularity),
-            "slli x{}, x{}, 2".format(s[4], s[1]),
-            "srli x{}, x{}, 2".format(s[4], s[4]),
-            "srli x{}, x{}, {}".format(s[4], s[4], self.pmp_granularity),
-            "slli x{}, x{}, {}".format(s[4], s[4], self.pmp_granularity),
+            "addi x{}, x{}, 1".format(s[4], s[1]),
+            "xor x{}, x{}, x{}".format(s[4], s[4], s[1]),
+            "not x{}, x{}".format(s[4], s[4]),
+            "and x{}, x{}, x{}".format(s[0], s[0], s[4]),
+            "and x{}, x{}, x{}".format(s[4], s[4], s[1]),
             "bne x{}, x{}, 18b".format(s[0], s[4]),
             "j 26f",
             "26: nop",
