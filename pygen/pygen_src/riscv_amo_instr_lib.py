@@ -123,20 +123,21 @@ class riscv_lr_sc_instr_stream (riscv_amo_base_instr_stream):
             allowed_sc_instr.append(riscv_instr_name_t.SC_D)
         self.lr_instr = riscv_instr.get_rand_instr(include_instr = allowed_lr_instr)
         self.sc_instr = riscv_instr.get_rand_instr(include_instr = allowed_sc_instr)
+        rs1 = riscv_reg_t(int(self.rs1_reg[0]))
         with self.lr_instr.randomize_with():
-            # self.lr_instr.rs1 == self.rs1_reg[0]  # TODO Getting error
+            self.lr_instr.rs1 == rs1
             with vsc.if_then(self.reserved_rd.size > 0):
                 self.lr_instr.rd.not_inside(vsc.rangelist(self.reserved_rd))
             with vsc.if_then(cfg.reserved_regs.size > 0):
                 self.lr_instr.rd.not_inside(vsc.rangelist(cfg.reserved_regs))
-            # self.lr_instr.rd != self.rs1_reg[0]  # TODO
+            self.lr_instr.rd != rs1
         with self.sc_instr.randomize_with():
-            # self.sc_instr.rs1 == self.rs1_reg[0]  # TODO
+            self.sc_instr.rs1 == rs1
             with vsc.if_then(self.reserved_rd.size > 0):
                 self.sc_instr.rd.not_inside(vsc.rangelist(self.reserved_rd))
             with vsc.if_then(cfg.reserved_regs.size > 0):
                 self.sc_instr.rd.not_inside(vsc.rangelist(cfg.reserved_regs))
-            # self.sc_instr.rd != self.rs1_reg[0]  # TODO
+            self.sc_instr.rd != rs1
         self.instr_list.extend((self.lr_instr, self.sc_instr))
 
     '''
