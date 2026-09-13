@@ -254,7 +254,7 @@ class riscv_push_stack_instr(riscv_rand_instr_stream):
         with self.push_stack_instr[0].randomize_with():
             self.push_stack_instr[0].rd == cfg.sp
             self.push_stack_instr[0].rs1 == cfg.sp
-            self.push_stack_instr[0].imm == (~cfg.stack_len + 1)
+            self.push_stack_instr[0].imm == ((~self.stack_len + 1) & 0xFFFFFFFF)
 
         self.push_stack_instr[0].imm_str = '-{}'.format(self.stack_len)
         for i in range(len(self.saved_regs)):
