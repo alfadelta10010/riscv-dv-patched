@@ -92,8 +92,8 @@ class riscv_callstack_gen:
 # implemented with post randomize rather than constraints for performance considerations.
 
     def post_randomize(self):
-        last_level = 0
-        last_level = self.stack_level[self.program_cnt - 1]
+        program_cnt = int(self.program_cnt)
+        last_level = int(self.stack_level[program_cnt - 1])
         for i in range(len(self.program_h)):
             self.program_h[i].program_id = i
             self.program_h[i].call_stack_level = self.stack_level[i]
@@ -102,10 +102,8 @@ class riscv_callstack_gen:
         for i in range(last_level):
             program_list = []
             next_program_list = []
-            sub_program_id_pool = vsc.randlist_t()
-            sub_program_cnt = []
             idx = 0
-            for j in range(self.program_cnt):
+            for j in range(program_cnt):
                 if self.stack_level[j] == i:
                     program_list.append(j)
                 if self.stack_level[j] == i + 1:
@@ -119,13 +117,13 @@ class riscv_callstack_gen:
             # always returned size, disabling that entirely.
             total_sub_program_cnt = random.randrange(len(next_program_list),
                                                      len(next_program_list) + 2)
-            sub_program_id_pool = [0] * total_sub_program_cnt
-            for i in range(len(sub_program_id_pool)):
-                with sub_program_id_pool[i].randomize_with():
-                    with vsc.if_then(sub_program_id_pool[i]):
-                        sub_program_id_pool[i] == next_program_list[i]
-                    with vsc.else_then():
-                        sub_program_id_pool[i].inside(vsc.rangelist(next_program_list))
+            # src/riscv_callstack_gen.sv: the first next_program_list.size()
+            # entries are the next-level programs themselves, so every one of
+            # them gets a caller; an extra entry is a duplicate drawn from the
+            # same list.
+            sub_program_id_pool = [next_program_list[j] if j < len(next_program_list)
+                                   else random.choice(next_program_list)
+                                   for j in range(total_sub_program_cnt)]
             random.shuffle(sub_program_id_pool)
             sub_program_cnt = [0] * len(program_list)
             logging.info("{} programs @Lv{}-> {} programs at next level".format(
