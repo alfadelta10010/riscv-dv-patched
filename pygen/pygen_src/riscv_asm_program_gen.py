@@ -860,6 +860,18 @@ class riscv_asm_program_gen:
                       cfg.gpr[1], hex(exception_cause_t.BREAKPOINT)),
                       "beq x{}, x{}, {}ebreak_handler".format(
                       cfg.gpr[0], cfg.gpr[1], pkg_ins.hart_prefix(hart)),
+                      # Access faults (src/riscv_asm_program_gen.sv). Page-fault arms
+                      # are not emitted: SATP_MODE is BARE for every pyflow target and
+                      # pt_fault_handler has no terminating instruction.
+                      "li x{}, {}".format(cfg.gpr[1], hex(exception_cause_t.INSTRUCTION_ACCESS_FAULT)),
+                      "beq x{}, x{}, {}instr_fault_handler".format(
+                      cfg.gpr[0], cfg.gpr[1], pkg_ins.hart_prefix(hart)),
+                      "li x{}, {}".format(cfg.gpr[1], hex(exception_cause_t.LOAD_ACCESS_FAULT)),
+                      "beq x{}, x{}, {}load_fault_handler".format(
+                      cfg.gpr[0], cfg.gpr[1], pkg_ins.hart_prefix(hart)),
+                      "li x{}, {}".format(cfg.gpr[1], hex(exception_cause_t.STORE_AMO_ACCESS_FAULT)),
+                      "beq x{}, x{}, {}store_fault_handler".format(
+                      cfg.gpr[0], cfg.gpr[1], pkg_ins.hart_prefix(hart)),
                       # Illegal instruction exception
                       "li x{}, {} # ILLEGAL_INSTRUCTION".format(
                       cfg.gpr[1], hex(exception_cause_t.ILLEGAL_INSTRUCTION)),
@@ -992,19 +1004,34 @@ class riscv_asm_program_gen:
         self.gen_section(pkg_ins.get_label("illegal_instr_handler", hart), instr)
 
     # TODO: handshake correct csr based on delegation
+    def gen_fault_handler(self, hart, core_status, fault_type, label):
+        # src/riscv_asm_program_gen.sv gen_{instr,load,store}_fault_handler
+        instr = []
+        self.gen_signature_handshake(instr, signature_type_t.CORE_STATUS, core_status)
+        self.gen_signature_handshake(instr=instr, signature_type=signature_type_t.WRITE_CSR,
+                                     csr=privileged_reg_t.MCAUSE)
+        if cfg.pmp_cfg is not None and cfg.pmp_cfg.enable_pmp_exception_handler:
+            cfg.pmp_cfg.gen_pmp_exception_routine(
+                [int(r) for r in cfg.gpr] + [int(cfg.scratch_reg)] +
+                [int(r) for r in cfg.pmp_reg], fault_type, instr)
+        pkg_ins.pop_gpr_from_kernel_stack(privileged_reg_t.MSTATUS, privileged_reg_t.MSCRATCH,
+                                          cfg.mstatus_mprv, cfg.sp, cfg.tp, instr)
+        instr.append("mret")
+        self.gen_section(pkg_ins.get_label(label, hart), instr)
+
     def gen_instr_fault_handler(self, hart):
-        # TODO
-        pass
+        self.gen_fault_handler(hart, core_status_t.INSTR_FAULT_EXCEPTION,
+                               exception_cause_t.INSTRUCTION_ACCESS_FAULT, "instr_fault_handler")
 
     # TODO: handshake correct csr based on delegation
     def gen_load_fault_handler(self, hart):
-        # TODO
-        pass
+        self.gen_fault_handler(hart, core_status_t.LOAD_FAULT_EXCEPTION,
+                               exception_cause_t.LOAD_ACCESS_FAULT, "load_fault_handler")
 
     # TODO: handshake correct csr based on delegation
     def gen_store_fault_handler(self, hart):
-        # TODO
-        pass
+        self.gen_fault_handler(hart, core_status_t.STORE_FAULT_EXCEPTION,
+                               exception_cause_t.STORE_AMO_ACCESS_FAULT, "store_fault_handler")
 
     # ---------------------------------------------------------------------------------------
     # Page table setup

@@ -20,16 +20,18 @@ Scope of this port, and why:
     implement mseccfg (src/csr.v decodes no 0x747), so support_epmp is 0 and
     that entire branch is unreachable. The code below is the non-ePMP path.
 
-  * No gen_pmp_exception_routine. It exists so that a PMP fault can be
-    recovered from by widening the offending region, which matters only when
-    the generated regions actually deny access -- i.e. under randomization.
+  * gen_pmp_exception_routine is ported, with the divergences its docstring
+    lists. After an access fault it finds the matching entry and grants the
+    missing permission, so a restrictive region does not re-fault forever.
 """
 
 import logging
+import math
 import random
 import sys
 
-from pygen_src.riscv_instr_pkg import pmp_addr_mode_t, privileged_reg_t
+from pygen_src.riscv_instr_pkg import (pmp_addr_mode_t, privileged_reg_t,
+                                       exception_cause_t)
 
 
 class pmp_cfg_reg_t:
@@ -76,6 +78,9 @@ class riscv_pmp_cfg:
         self.pmp_num_regions_given = 0
         self.pmp_randomize = 0
         self.pmp_allow_illegal_tor = 0
+        # After a PMP access fault the handler finds the matching entry and sets
+        # the missing access bit so execution can continue (SV default: on).
+        self.enable_pmp_exception_handler = 1
         # Allow regions above the 32-bit address space when XLEN == 32, in
         # high_addr_proportion percent of randomized configurations.
         self.allow_high_addrs = 0
@@ -313,6 +318,190 @@ class riscv_pmp_cfg:
                 instr.append("csrw {}, x{}".format(
                     hex(self.base_pmpcfg_addr + pmp_id), scratch_reg[0]))
                 pmp_word = 0
+
+    def gen_pmp_exception_routine(self, scratch_reg, fault_type, instr):
+        """Find the PMP entry matching mtval and grant the missing permission.
+
+        Ported from src/riscv_pmp_cfg.sv. scratch_reg holds 7 registers:
+          [0] temporary       [1] pmpaddr[i]      [2] pmpcfg CSR value
+          [3] 8-bit cfg byte  [4] temporary / A   [5] pmpaddr[i-1]
+          [6] loop counter
+
+        Deliberate divergence: exits for a fault PMP cannot have caused end
+        the test as a failure, tohost = (mcause << 1) | 1, where the SV jumps
+        to test_done (a pass) or retries forever:
+          * no entry matches and the access was checked with M-mode
+            privilege -- M-mode is only denied by a matching locked entry.
+            (No match for a U-mode-privilege access is PMP's default deny and
+            ends the test through test_done, as in the SV.);
+          * an entry has an address-matching mode outside OFF/TOR/NA4/NAPOT;
+          * the matching entry already grants the faulting access. The SV
+            ORs the bit in and returns to the same instruction, which faults
+            again forever.
+        A matching *locked* entry keeps the SV behaviour (end or skip).
+        """
+        s = scratch_reg
+        clog = int(math.log2(self.cfg_per_csr))
+        xlen = self.xlen
+        mcause, mepc, mtval = (hex(privileged_reg_t.MCAUSE), hex(privileged_reg_t.MEPC),
+                               hex(privileged_reg_t.MTVAL))
+        mstatus = hex(privileged_reg_t.MSTATUS)
+        instr.extend(("li x{}, 0".format(s[0]),
+                      "mv x{}, x{}".format(s[6], s[0]),
+                      "li x{}, 0".format(s[5]),
+                      "0: mv x{}, x{}".format(s[0], s[6]),
+                      "mv x{}, x{}".format(s[4], s[0])))
+        for i in range(1, self.pmp_num_regions + 1):
+            instr.append("li x{}, {}".format(s[4], i - 1))
+            instr.append("beq x{}, x{}, {}f".format(s[0], s[4], i))
+        for i in range(1, self.pmp_num_regions + 1):
+            instr.append("{}: csrr x{}, {}".format(i, s[1], hex(self.base_pmp_addr + i - 1)))
+            instr.append("csrr x{}, {}".format(s[2], hex(self.base_pmpcfg_addr + (i - 1) // 4)))
+            instr.append("j 17f")
+        instr.extend((
+            "17: li x{}, {}".format(s[3], self.cfg_per_csr),
+            "slli x{}, x{}, {}".format(s[0], s[6], xlen - clog),
+            "srli x{}, x{}, {}".format(s[0], s[0], xlen - clog),
+            "sub x{}, x{}, x{}".format(s[4], s[3], s[0]),
+            "addi x{}, x{}, -1".format(s[4], s[4]),
+            "slli x{}, x{}, 3".format(s[4], s[4]),
+            "sll x{}, x{}, x{}".format(s[3], s[2], s[4]),
+            "slli x{}, x{}, 3".format(s[0], s[0]),
+            "add x{}, x{}, x{}".format(s[4], s[4], s[0]),
+            "srl x{}, x{}, x{}".format(s[3], s[3], s[4]),
+            "slli x{}, x{}, {}".format(s[4], s[3], xlen - 5),
+            "srli x{}, x{}, {}".format(s[4], s[4], xlen - 2),
+            "beqz x{}, 20f".format(s[4]),
+            "li x{}, 1".format(s[0]),
+            "beq x{}, x{}, 21f".format(s[4], s[0]),
+            "li x{}, 2".format(s[0]),
+            "beq x{}, x{}, 24f".format(s[4], s[0]),
+            "li x{}, 3".format(s[0]),
+            "beq x{}, x{}, 25f".format(s[4], s[0]),
+            "j 36f",
+            "18: mv x{}, x{}".format(s[0], s[6]),
+            "mv x{}, x{}".format(s[5], s[1]),
+            "addi x{}, x{}, 1".format(s[0], s[0]),
+            "mv x{}, x{}".format(s[6], s[0]),
+            "li x{}, {}".format(s[1], self.pmp_num_regions),
+            "ble x{}, x{}, 19f".format(s[1], s[0]),
+            "j 0b",
+            # No entry matches. If the access was checked with U-mode
+            # privilege this is PMP's default deny: end the test as the SV
+            # does. The trap came from U-mode when MPP == U; a load/store from
+            # M-mode with MPRV set was checked with the pre-trap MPP.
+            "19: csrr x{}, {}".format(s[0], mstatus),
+            "srli x{}, x{}, 11".format(s[0], s[0]),
+            "andi x{}, x{}, 3".format(s[0], s[0]),
+            "beqz x{}, 35f".format(s[0])))
+        if fault_type != exception_cause_t.INSTRUCTION_ACCESS_FAULT:
+            instr.extend(("csrr x{}, {}".format(s[0], mstatus),
+                          "srli x{}, x{}, 17".format(s[0], s[0]),
+                          "andi x{}, x{}, 1".format(s[0], s[0]),
+                          "bnez x{}, 35f".format(s[0])))
+        instr.extend((
+            # Not a fault PMP can have caused: fail the test.
+            "36: csrr x{}, {}".format(s[0], mcause),
+            "slli x3, x{}, 1".format(s[0]),
+            "ori x3, x3, 1",
+            "la x{}, write_tohost".format(s[0]),
+            "jalr x0, x{}, 0".format(s[0]),
+            "35: la x{}, test_done".format(s[0]),
+            "jalr x0, x{}, 0".format(s[0]),
+            "20: j 18b",
+            "21: mv x{}, x{}".format(s[0], s[6]),
+            "csrr x{}, {}".format(s[4], mtval),
+            "srli x{}, x{}, 2".format(s[4], s[4]),
+            "bnez x{}, 22f".format(s[0]),
+            "bltz x{}, 18b".format(s[4]),
+            "j 23f",
+            "22: bgtu x{}, x{}, 18b".format(s[5], s[4]),
+            "23: bleu x{}, x{}, 18b".format(s[1], s[4]),
+            "j 26f",
+            "24: csrr x{}, {}".format(s[0], mtval),
+            "srli x{}, x{}, 2".format(s[0], s[0]),
+            "slli x{}, x{}, 2".format(s[4], s[1]),
+            "srli x{}, x{}, 2".format(s[4], s[4]),
+            "bne x{}, x{}, 18b".format(s[0], s[4]),
+            "j 26f",
+            "25: csrr x{}, {}".format(s[0], mtval),
+            "srli x{}, x{}, 2".format(s[0], s[0]),
+            "srli x{}, x{}, {}".format(s[0], s[0], self.pmp_granularity),
+            "slli x{}, x{}, {}".format(s[0], s[0], self.pmp_granularity),
+            "slli x{}, x{}, 2".format(s[4], s[1]),
+            "srli x{}, x{}, 2".format(s[4], s[4]),
+            "srli x{}, x{}, {}".format(s[4], s[4], self.pmp_granularity),
+            "slli x{}, x{}, {}".format(s[4], s[4], self.pmp_granularity),
+            "bne x{}, x{}, 18b".format(s[0], s[4]),
+            "j 26f",
+            "26: nop",
+            "andi x{}, x{}, 128".format(s[4], s[3]),
+            "bnez x{}, 27f".format(s[4]),
+            "j 29f"))
+        def skip_faulting_instr(check_main):
+            seq = ["27: csrr x{}, {}".format(s[0], mepc)]
+            if check_main:
+                seq += ["la x{}, main".format(s[4]),
+                        "bge x{}, x{}, 40f".format(s[0], s[4]),
+                        "la x{}, test_done".format(s[0]),
+                        "jalr x0, x{}, 0".format(s[0]),
+                        "40: lw x{}, 0(x{})".format(s[0], s[0])]
+            else:
+                seq += ["lw x{}, 0(x{})".format(s[0], s[0])]
+            seq += ["li x{}, 3".format(s[4]),
+                    "and x{}, x{}, x{}".format(s[0], s[0], s[4]),
+                    "beq x{}, x{}, 28f".format(s[0], s[4]),
+                    "csrr x{}, {}".format(s[0], mepc),
+                    "addi x{}, x{}, 2".format(s[0], s[0]),
+                    "csrw {}, x{}".format(mepc, s[0]),
+                    "j 34f",
+                    "28: csrr x{}, {}".format(s[0], mepc),
+                    "addi x{}, x{}, 4".format(s[0], s[0]),
+                    "csrw {}, x{}".format(mepc, s[0]),
+                    "j 34f"]
+            return seq
+        if fault_type == exception_cause_t.INSTRUCTION_ACCESS_FAULT:
+            instr.extend(("27: la x{}, test_done".format(s[0]),
+                          "jalr x0, x{}, 0".format(s[0])))
+            check_bit, set_bits = 4, 4
+        elif fault_type == exception_cause_t.STORE_AMO_ACCESS_FAULT:
+            instr.extend(skip_faulting_instr(check_main=False))
+            # W=1 with R=0 is reserved, so granting write grants read too.
+            check_bit, set_bits = 2, 3
+        elif fault_type == exception_cause_t.LOAD_ACCESS_FAULT:
+            instr.extend(skip_faulting_instr(check_main=True))
+            check_bit, set_bits = 1, 1
+        else:
+            logging.critical("Invalid PMP fault type")
+            sys.exit(1)
+        instr.extend((
+            # Access already granted: PMP did not cause this fault.
+            "29: andi x{}, x{}, {}".format(s[4], s[3], check_bit),
+            "bnez x{}, 36b".format(s[4]),
+            "ori x{}, x{}, {}".format(s[3], s[3], set_bits),
+            "li x{}, {}".format(s[4], xlen - clog),
+            "sll x{}, x{}, x{}".format(s[0], s[6], s[4]),
+            "srl x{}, x{}, x{}".format(s[0], s[0], s[4]),
+            "slli x{}, x{}, 3".format(s[4], s[0]),
+            "sll x{}, x{}, x{}".format(s[3], s[3], s[4]),
+            "or x{}, x{}, x{}".format(s[2], s[2], s[3]),
+            "mv x{}, x{}".format(s[0], s[6]),
+            "srli x{}, x{}, {}".format(s[0], s[0], clog),
+            "beqz x{}, 30f".format(s[0]),
+            "li x{}, 1".format(s[4]),
+            "beq x{}, x{}, 31f".format(s[0], s[4]),
+            "li x{}, 2".format(s[4]),
+            "beq x{}, x{}, 32f".format(s[0], s[4]),
+            "li x{}, 3".format(s[4]),
+            "beq x{}, x{}, 33f".format(s[0], s[4]),
+            "30: csrw {}, x{}".format(hex(privileged_reg_t.PMPCFG0), s[2]),
+            "j 34f",
+            "31: csrw {}, x{}".format(hex(privileged_reg_t.PMPCFG1), s[2]),
+            "j 34f",
+            "32: csrw {}, x{}".format(hex(privileged_reg_t.PMPCFG2), s[2]),
+            "j 34f",
+            "33: csrw {}, x{}".format(hex(privileged_reg_t.PMPCFG3), s[2]),
+            "34: nop"))
 
     def gen_pmp_write_test(self, scratch_reg, instr):
         """Write random values to every pmpaddr and pmpcfg CSR, then restore.
