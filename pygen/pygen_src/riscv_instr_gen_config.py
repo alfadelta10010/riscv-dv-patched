@@ -123,7 +123,9 @@ class riscv_instr_gen_config:
         # Can overlap with the other GPRs used in the random generation,
         # as PMP exception handler is hardcoded and does not include any
         # random instructions.
-        self.pmp_reg = vsc.rand_enum_t(riscv_reg_t)
+        # Two registers used only inside the PMP exception routine; drawn in
+        # post_randomize() (see reserved_pmp_reg_c).
+        self.pmp_reg = []
 
         # Use a random register for stack pointer/thread pointer
         self.sp = vsc.rand_enum_t(riscv_reg_t)
@@ -408,13 +410,17 @@ class riscv_instr_gen_config:
     # so we can be a bit looser with constraints.
     @vsc.constraint
     def reserved_pmp_reg_c(self):
-        # TODO
+        # src/riscv_instr_gen_config.sv:
+        #   foreach (pmp_reg[i]) !(pmp_reg[i] inside {ZERO, sp, tp, scratch_reg});
+        #   unique {pmp_reg};   and gpr_c keeps gpr off pmp_reg.
+        # Applied in post_randomize(): expressing it needs array subscripts in
+        # constraints, which the pinned pyvsc cannot build reliably.
         pass
 
     @vsc.constraint
     def gpr_c(self):
         with vsc.foreach(self.gpr, idx = True) as i:
-            self.gpr[i].not_inside(vsc.rangelist(self.sp, self.tp, self.scratch_reg, self.pmp_reg,
+            self.gpr[i].not_inside(vsc.rangelist(self.sp, self.tp, self.scratch_reg,
                                                  riscv_reg_t.ZERO, riscv_reg_t.RA, riscv_reg_t.GP))
         vsc.unique(self.gpr)
 
@@ -484,6 +490,9 @@ class riscv_instr_gen_config:
         pass
 
     def post_randomize(self):
+        taken = {int(riscv_reg_t.ZERO), int(self.sp), int(self.tp), int(self.scratch_reg)}
+        taken.update(int(r) for r in self.gpr)
+        self.pmp_reg = random.sample([r for r in riscv_reg_t if int(r) not in taken], 2)
         # Setup the list all reserved registers
         self.reserved_regs.extend((self.tp, self.sp, self.scratch_reg))
         # enable_sfence is declared rand and left completely unconstrained by

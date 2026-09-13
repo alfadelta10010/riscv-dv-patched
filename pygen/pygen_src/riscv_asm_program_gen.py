@@ -669,7 +669,7 @@ class riscv_asm_program_gen:
         if not cfg.pmp_cfg.enable_write_pmp_csr:
             return
         instr = []
-        cfg.pmp_cfg.gen_pmp_write_test([cfg.scratch_reg, cfg.pmp_reg], instr)
+        cfg.pmp_cfg.gen_pmp_write_test([cfg.scratch_reg, cfg.pmp_reg[0]], instr)
         self.gen_section(pkg_ins.get_label("pmp_csr_write_test", hart), instr)
 
     # Handles creation of a subroutine to initialize any custom CSRs
