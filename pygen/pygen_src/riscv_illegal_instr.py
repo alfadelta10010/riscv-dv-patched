@@ -321,7 +321,7 @@ class riscv_illegal_instr:
     @vsc.constraint
     def has_func3_c(self):
         vsc.solve_order(self.opcode, self.func7)
-        with vsc.if_then(self.opcode == 55 or self.opcode == 111 or self.opcode == 23):
+        with vsc.if_then((self.opcode == 55) | (self.opcode == 111) | (self.opcode == 23)):
             self.has_func3 == 0
         with vsc.else_then():
             self.has_func3 == 1
