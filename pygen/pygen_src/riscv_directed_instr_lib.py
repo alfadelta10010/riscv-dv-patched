@@ -268,7 +268,7 @@ class int_numeric_e(IntEnum):
 class riscv_int_numeric_corner_stream(riscv_directed_instr_stream):
     def __init__(self):
         super().__init__()
-        self.num_of_avail_regs = vsc.uint32_t(10)
+        self.num_of_avail_regs = 10
         self.num_of_instr = vsc.rand_uint8_t()
         self.init_val = vsc.randsz_list_t(vsc.rand_bit_t(rcs.XLEN - 1))
         self.init_val_type = vsc.randsz_list_t(vsc.enum_t(int_numeric_e))

@@ -32,6 +32,13 @@ class riscv_instr_stream:
         self.label = ""
         # User can specify a small group of available registers to generate various hazard condition
         self.avail_regs = vsc.randsz_list_t(vsc.enum_t(riscv_reg_t))
+        # Size of avail_regs. The SV leaves the array empty unless a stream
+        # sizes it (the hazard stream uses 6); streams assign this after
+        # super().__init__(). Declared here because pyvsc builds the field
+        # model at the end of this (decorated) constructor, before a subclass
+        # body runs. 8 bits: pyvsc derives a random-size list's maximum from
+        # the width of its size bound.
+        self.num_of_avail_regs = vsc.uint8_t(0)
         # Some additional reserved registers that should not be used as rd register
         # by this instruction stream
         self.reserved_rd = vsc.list_t(vsc.enum_t(riscv_reg_t))
@@ -178,7 +185,7 @@ class riscv_rand_instr_stream(riscv_instr_stream):
 
     @vsc.constraint
     def avail_reg_c(self):
-        self.avail_regs.size == 10
+        self.avail_regs.size == self.num_of_avail_regs
 
     def create_instr_instance(self):
         for i in range(self.instr_cnt):
@@ -197,20 +204,30 @@ class riscv_rand_instr_stream(riscv_instr_stream):
         self.setup_instruction_dist(no_branch, no_load_store)
 
     def randomize_avail_regs(self):
-        pass
-        # TODO
-        '''if self.avail_regs.size > 0:
-            try:
-                with vsc.randomize_with(self.avail_regs):
-                    vsc.unique(self.avail_regs)
-                    self.avail_regs[0].inside(vsc.rangelist(vsc.rng(riscv_reg_t.S0,
-                                                                    riscv_reg_t.A5)))
-                    with vsc.foreach(self.avail_regs, idx = True) as i:
-                        self.avail_regs[i].not_inside(vsc.rangelist(cfg.reserved_regs,
-                                                                    self.reserved_rd))
-            except Exception:
-                logging.critical("Cannot randomize avail_regs")
-                sys.exit(1)'''
+        # src/riscv_instr_stream.sv:
+        #   std::randomize(avail_regs) with {
+        #     unique{avail_regs};
+        #     avail_regs[0] inside {[S0 : A5]};
+        #     foreach(avail_regs[i]) !(avail_regs[i] inside {cfg.reserved_regs, reserved_rd});
+        #   }
+        # Drawn directly: the array's size is already fixed by the solve.
+        n = len(self.avail_regs)
+        if n == 0:
+            return
+        excluded = {int(r) for r in cfg.reserved_regs} | {int(r) for r in self.reserved_rd}
+        first = [r for r in riscv_reg_t
+                 if riscv_reg_t.S0 <= r <= riscv_reg_t.A5 and int(r) not in excluded]
+        if not first:
+            logging.critical("Cannot randomize avail_regs")
+            sys.exit(1)
+        regs = [random.choice(first)]
+        rest = [r for r in riscv_reg_t if int(r) not in excluded and r != regs[0]]
+        if len(rest) < n - 1:
+            logging.critical("Cannot randomize avail_regs")
+            sys.exit(1)
+        regs += random.sample(rest, n - 1)
+        for i, r in enumerate(regs):
+            self.avail_regs[i] = r
 
     def setup_instruction_dist(self, no_branch = 0, no_load_store = 1):
         if cfg.dist_control_mode:
@@ -235,9 +252,11 @@ class riscv_rand_instr_stream(riscv_instr_stream):
 
     def randomize_instr(self, instr, is_in_debug = 0, disable_dist = 0, include_group = []):
         exclude_instr = []
-        is_SP_in_reserved_rd = riscv_reg_t.SP in self.reserved_rd
-        is_SP_in_reserved_regs = riscv_reg_t.SP in cfg.reserved_regs
-        is_SP_in_avail_regs = riscv_reg_t.SP in self.avail_regs
+        # Compare values: `x in <vsc list field>` does not test membership.
+        avail = [int(r) for r in self.avail_regs]
+        is_SP_in_reserved_rd = int(riscv_reg_t.SP) in [int(r) for r in self.reserved_rd]
+        is_SP_in_reserved_regs = int(riscv_reg_t.SP) in [int(r) for r in cfg.reserved_regs]
+        is_SP_in_avail_regs = int(riscv_reg_t.SP) in avail
         if ((is_SP_in_reserved_rd or is_SP_in_reserved_regs) or
                 (len(self.avail_regs) > 0 and not is_SP_in_avail_regs)):
             exclude_instr.append(riscv_instr_name_t.C_ADDI4SPN)
@@ -260,14 +279,19 @@ class riscv_rand_instr_stream(riscv_instr_stream):
         return instr
 
     def randomize_gpr(self, instr):
+        # The current register values, not the list field: an `inside` over a
+        # random-size list builds no terms in pyvsc, so rs1/rs2/rd were never
+        # restricted to avail_regs. Read before entering the constraint scope,
+        # where the field would be an expression.
+        avail = [int(r) for r in self.avail_regs]
         with instr.randomize_with() as it:
-            with vsc.if_then(self.avail_regs.size > 0):
+            if avail:
                 with vsc.if_then(instr.has_rs1):
-                    instr.rs1.inside(vsc.rangelist(self.avail_regs))
+                    instr.rs1.inside(vsc.rangelist(*avail))
                 with vsc.if_then(instr.has_rs2):
-                    instr.rs2.inside(vsc.rangelist(self.avail_regs))
+                    instr.rs2.inside(vsc.rangelist(*avail))
                 with vsc.if_then(instr.has_rd):
-                    instr.rd.inside(vsc.rangelist(self.avail_regs))
+                    instr.rd.inside(vsc.rangelist(*avail))
             with vsc.foreach(self.reserved_rd, idx = True) as i:
                 with vsc.if_then(instr.has_rd):
                     instr.rd != self.reserved_rd[i]

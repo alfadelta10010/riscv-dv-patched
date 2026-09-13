@@ -53,8 +53,9 @@ Each is explained in its commit.
   in `new()`, before randomization).
 * `get_invalid_priv_lvl_csr()` is recomputed after the boot mode is drawn (the
   SV computes it in `new()` from the enum default).
-* `cfg.ra` and `pmp_reg` are drawn after the solve, from the SV's
-  distribution/constraints, because pyvsc does not reproduce them in-solve.
+* `cfg.ra`, `pmp_reg` and a stream's `avail_regs` are drawn after the solve,
+  from the SV's distribution/constraints, because pyvsc does not reproduce
+  them in-solve; `randomize_gpr` constrains rs1/rs2/rd to the drawn values.
 
 ## Not ported, or not reachable from the rv32imac target
 
