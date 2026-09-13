@@ -18,7 +18,7 @@ import logging
 from enum import IntEnum, auto
 from importlib import import_module
 from pygen_src.riscv_instr_gen_config import cfg
-from pygen_src.riscv_instr_pkg import riscv_instr_group_t
+from pygen_src.riscv_instr_pkg import riscv_instr_group_t, privileged_reg_t
 rcs = import_module("pygen_src.target." + cfg.argv.target + ".riscv_core_setting")
 
 
@@ -70,7 +70,12 @@ class riscv_illegal_instr:
         self.has_func7 = vsc.rand_bit_t(1)
         self.c_op = vsc.rand_bit_t(2)
         self.c_msb = vsc.rand_bit_t(3)
-        self.csrs = []
+        # Every CSR address the generator knows. kIllegalSystemInstr draws a
+        # CSR instruction whose address is outside this set, as init() does in
+        # src/riscv_illegal_instr.sv. Filled here, not in initialize(): a
+        # plain list is read once when the constraints are built, and
+        # not_inside() over an empty rangelist makes the model unsatisfiable.
+        self.csrs = [int(csr) for csr in privileged_reg_t]
         # Default legal self.opcode for RV32I instructions
         self.legal_opcode = vsc.list_t(vsc.bit_t(7))
         self.legal_opcode = [3, 15, 19, 23, 35, 55, 99, 51, 103, 115, 111]
@@ -128,7 +133,8 @@ class riscv_illegal_instr:
             with vsc.else_then():
                 # Invalid CSR instructions
                 self.instr_bin[31:20].not_inside(vsc.rangelist(self.csrs))
-                # self.instr_bin[20:31].not_inside(vsc.rangelist(self.custom_csr))
+                if getattr(rcs, "custom_csr", []):
+                    self.instr_bin[31:20].not_inside(vsc.rangelist(rcs.custom_csr))
 
     @vsc.constraint
     def legal_rv32_c_slli(self):
