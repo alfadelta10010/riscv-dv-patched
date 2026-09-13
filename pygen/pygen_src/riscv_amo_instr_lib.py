@@ -89,7 +89,7 @@ class riscv_amo_base_instr_stream(riscv_mem_access_stream):
 
     def post_randomize(self):
         self.gen_amo_instr()
-        self.reserved_rd.append(self.rs1_reg)
+        self.reserved_rd.extend([riscv_reg_t(int(r)) for r in self.rs1_reg])
         self.add_mixed_instr(self.num_mixed_instr)
         self.init_offset_reg()
         super().post_randomize()
