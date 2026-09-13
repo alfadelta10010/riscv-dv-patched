@@ -385,6 +385,7 @@ class riscv_instr_gen_config:
 
     @vsc.constraint
     def ra_c(self):
+        # The SV's `ra dist {...}` is applied in post_randomize().
         self.ra != self.sp
         self.ra != self.tp
         self.ra != riscv_reg_t.ZERO
@@ -490,6 +491,20 @@ class riscv_instr_gen_config:
         pass
 
     def post_randomize(self):
+        # src/riscv_instr_gen_config.sv ra_c:
+        #   ra dist {RA := 3, T1 := 2, [SP:T0] :/ 1, [T2:T6] :/ 4};
+        # drawn over the values ra_c and reserve_scratch_reg_c leave legal.
+        # vsc.dist in the constraint only nudges the solver (measured RA 16%,
+        # T1 9%, where the SV gives 30% and 20%).
+        ra_weights = {riscv_reg_t.RA: 3.0, riscv_reg_t.T1: 2.0}
+        for r in riscv_reg_t:
+            if riscv_reg_t.SP <= r <= riscv_reg_t.T0:
+                ra_weights[r] = 1.0 / (riscv_reg_t.T0 - riscv_reg_t.SP + 1)
+            elif riscv_reg_t.T2 <= r <= riscv_reg_t.T6:
+                ra_weights[r] = 4.0 / (riscv_reg_t.T6 - riscv_reg_t.T2 + 1)
+        illegal = {int(riscv_reg_t.ZERO), int(self.sp), int(self.tp), int(self.scratch_reg)}
+        legal = [r for r in ra_weights if int(r) not in illegal]
+        self.ra = random.choices(legal, [ra_weights[r] for r in legal])[0]
         taken = {int(riscv_reg_t.ZERO), int(self.sp), int(self.tp), int(self.scratch_reg)}
         taken.update(int(r) for r in self.gpr)
         self.pmp_reg = random.sample([r for r in riscv_reg_t if int(r) not in taken], 2)
