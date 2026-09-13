@@ -426,7 +426,7 @@ class riscv_asm_program_gen:
                 self.gen_signature_handshake(instr, signature_type_t.CORE_STATUS,
                                              core_status_t.INITIALIZED)
                 self.format_section(instr)
-                self.instr_stream.append(instr)
+                self.instr_stream.extend(instr)
             else:
                 logging.critical("The signature_addr is not properly configured!")
                 sys.exit(1)
