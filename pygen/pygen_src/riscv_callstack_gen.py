@@ -18,7 +18,8 @@ import vsc
 
 @vsc.randobj
 class riscv_program:
-    def __init__(self):
+    def __init__(self, name=""):
+        self.name = name
         self.program_id = vsc.rand_bit_t(16)
         self.call_stack_level = vsc.rand_uint32_t()
         self.sub_program_id = vsc.rand_list_t(vsc.bit_t(16))
