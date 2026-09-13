@@ -79,10 +79,9 @@ class riscv_instr_sequence:
         self.instr_stream.gen_instr(no_branch = no_branch, no_load_store = 1,
                                     is_debug_program = self.is_debug_program)
 
-        # TODO Commenting for now as it is blocking sub_program
-        # if not is_main_program:
-        #     self.gen_stack_enter_instr()
-        #     self.gen_stack_exit_instr()
+        if not is_main_program:
+            self.gen_stack_enter_instr()
+            self.gen_stack_exit_instr()
         logging.info("Finishing instruction generation")
 
     # Generate the stack push operations for this program
