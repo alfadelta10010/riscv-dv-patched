@@ -470,6 +470,20 @@ class riscv_instr_gen_config:
     def post_randomize(self):
         # Setup the list all reserved registers
         self.reserved_regs.extend((self.tp, self.sp, self.scratch_reg))
+        # enable_sfence is declared rand and left completely unconstrained by
+        # the port, so it comes back as a coin flip. src/riscv_instr_gen_config.sv
+        # constrains it (line 293-295):
+        #
+        #   (init_privileged_mode != SUPERVISOR_MODE || !support_sfence ||
+        #    mstatus_tvm || no_fence) -> (enable_sfence == 1'b0);
+        #
+        # Apply that implication to the solved value. Without it, restoring the
+        # SFENCE_VMA guard in create_instr_list would emit sfence.vma on a core
+        # with support_sfence = 0.
+        if (self.init_privileged_mode != privileged_mode_t.SUPERVISOR_MODE or
+                not rcs_support_sfence(self.argv.target) or
+                self.mstatus_tvm or self.no_fence):
+            self.enable_sfence = 0
         self.setup_pmp_cfg()
         # Need to save all loop registers, and RA/T0
         self.min_stack_len_per_program = 2 * (rcs.XLEN // 8)
@@ -735,6 +749,17 @@ class riscv_instr_gen_config:
         '''
         args = parse.parse_args()
         return args
+
+
+def rcs_support_sfence(target):
+    """support_sfence for the selected target, imported lazily.
+
+    The core settings module is resolved from the parsed target, which this
+    module is itself responsible for parsing, so it cannot be imported at the
+    top of the file.
+    """
+    return import_module("pygen_src.target." + target +
+                         ".riscv_core_setting").support_sfence
 
 
 cfg = riscv_instr_gen_config()
