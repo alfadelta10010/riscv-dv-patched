@@ -834,7 +834,14 @@ class riscv_asm_program_gen:
         instr.extend(("csrr x{}, {} # {}".format(cfg.gpr[0], hex(epc), epc.name),
                       "csrr x{}, {} # {}".format(cfg.gpr[0], hex(cause), cause.name),
                       # Check if it's an ECALL exception. Jump to ECALL exception handler
-                      # TODO ECALL_SMODE, ECALL_UMODE
+                      "li x{}, {} # ECALL_UMODE".format(cfg.gpr[1],
+                                                        hex(exception_cause_t.ECALL_UMODE)),
+                      "beq x{}, x{}, {}ecall_handler".format(
+                      cfg.gpr[0], cfg.gpr[1], pkg_ins.hart_prefix(hart)),
+                      "li x{}, {} # ECALL_SMODE".format(cfg.gpr[1],
+                                                        hex(exception_cause_t.ECALL_SMODE)),
+                      "beq x{}, x{}, {}ecall_handler".format(
+                      cfg.gpr[0], cfg.gpr[1], pkg_ins.hart_prefix(hart)),
                       "li x{}, {} # ECALL_MMODE".format(cfg.gpr[1],
                                                         hex(exception_cause_t.ECALL_MMODE)),
                       "beq x{}, x{}, {}ecall_handler".format(
