@@ -71,7 +71,12 @@ class riscv_amo_base_instr_stream(riscv_mem_access_stream):
     def pre_randomize(self):
         self.data_page = cfg.amo_region
         max_data_page_id = len(self.data_page)
-        self.data_page_id = random.randrange(0, max_data_page_id - 1)
+        # src/riscv_amo_instr_lib.sv:67 is $urandom_range(0, max_data_page_id - 1),
+        # which includes the upper bound. randrange excludes it, so this drew from
+        # [0, max-2] -- and cfg.amo_region holds exactly one region
+        # (riscv_instr_gen_config.py:155), making it randrange(0, 0), which raises
+        # ValueError. Every AMO stream aborted on construction.
+        self.data_page_id = random.randrange(max_data_page_id)
         self.max_offset = self.data_page[self.data_page_id].size_in_bytes
 
     # Use "la" instruction to initialize the offset regiseter

@@ -255,7 +255,10 @@ class riscv_instr_sequence:
     def generate_return_routine(self, prefix):
         routine_str = ''
         jump_instr = [riscv_instr_name_t.JALR]
-        rand_lsb = random.randrange(0, 1)
+        # src/riscv_instr_sequence.sv:295 $urandom_range(0, 1): a coin flip.
+        # randrange(0, 1) is always 0, so the odd-LSB path -- which checks that
+        # JALR ignores bit 0 of the target -- was never generated.
+        rand_lsb = random.randrange(2)
         ra = vsc.rand_enum_t(riscv_reg_t)
         try:
             with vsc.randomize_with(ra):

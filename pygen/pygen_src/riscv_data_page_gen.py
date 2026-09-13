@@ -37,7 +37,11 @@ class riscv_data_page_gen:
         data = [0] * num_of_bytes
         for i in range(len(data)):
             if pattern == data_pattern_t.RAND_DATA:
-                temp_data = random.randrange(0, (2**8) - 1)
+                # src/riscv_data_page_gen.sv:43 randomizes a full bit[7:0].
+                # randrange(0, 255) never returns 255, so 0xFF never appeared in
+                # a random data page -- an all-ones byte is exactly the value a
+                # sign-extension or mask bug shows up on.
+                temp_data = random.randrange(2**8)
                 data[i] = temp_data
             elif pattern == data_pattern_t.INCR_VAL:
                 data[i] = (idx + i) % 256

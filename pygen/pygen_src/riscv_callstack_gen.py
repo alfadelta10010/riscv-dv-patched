@@ -111,8 +111,12 @@ class riscv_callstack_gen:
             # Randmly duplicate some sub programs in the pool to create a case that
             # one sub program is called by multiple caller. Also it's possible to call
             # the same sub program in one program multiple times.
+            # src/riscv_callstack_gen.sv:157 is
+            # $urandom_range(size, size + 1) -- inclusive, so it may add one
+            # duplicated sub-program. randrange excludes the upper bound and
+            # always returned size, disabling that entirely.
             total_sub_program_cnt = random.randrange(len(next_program_list),
-                                                     len(next_program_list) + 1)
+                                                     len(next_program_list) + 2)
             sub_program_id_pool = [0] * total_sub_program_cnt
             for i in range(len(sub_program_id_pool)):
                 with sub_program_id_pool[i].randomize_with():

@@ -274,7 +274,10 @@ class riscv_push_stack_instr(riscv_rand_instr_stream):
 
             self.push_stack_instr[i + 1].process_load_store = 0
         if allow_branch:
-            self.enable_branch = random.randrange(0, 1)
+            # src/riscv_directed_instr_lib.sv:334 randomizes this bit.
+            # randrange(0, 1) is always 0, so the push-stack sequence never
+            # contained a branch.
+            self.enable_branch = random.randrange(2)
         else:
             self.enable_branch = 0
         if self.enable_branch:
