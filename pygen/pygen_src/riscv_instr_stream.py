@@ -164,7 +164,7 @@ class riscv_rand_instr_stream(riscv_instr_stream):
             self.instr_list.append(None)
 
     def setup_allowed_instr(self, no_branch = 0, no_load_store = 1):
-        self.allowed_instr = riscv_instr.basic_instr
+        self.allowed_instr = list(riscv_instr.basic_instr)
         if no_branch == 0:
             self.allowed_instr.extend(
                 riscv_instr.instr_category[riscv_instr_category_t.BRANCH.name])
@@ -219,19 +219,19 @@ class riscv_rand_instr_stream(riscv_instr_stream):
         is_SP_in_avail_regs = riscv_reg_t.SP in self.avail_regs
         if ((is_SP_in_reserved_rd or is_SP_in_reserved_regs) or
                 (len(self.avail_regs) > 0 and not is_SP_in_avail_regs)):
-            exclude_instr.append(riscv_instr_name_t.C_ADDI4SPN.name)
-            exclude_instr.append(riscv_instr_name_t.C_ADDI16SP.name)
-            exclude_instr.append(riscv_instr_name_t.C_LWSP.name)
-            exclude_instr.append(riscv_instr_name_t.C_LDSP.name)
+            exclude_instr.append(riscv_instr_name_t.C_ADDI4SPN)
+            exclude_instr.append(riscv_instr_name_t.C_ADDI16SP)
+            exclude_instr.append(riscv_instr_name_t.C_LWSP)
+            exclude_instr.append(riscv_instr_name_t.C_LDSP)
         # Post-process the allowed_instr and exclude_instr lists to handle
         # adding ebreak instructions into the debug ROM.
         if is_in_debug:
             if (cfg.no_ebreak and cfg.enable_ebreak_in_debug_rom):
-                self.allowed_instr.extend([riscv_instr_name_t.EBREAK.name,
-                                           riscv_instr_name_t.C_EBREAK.name])
+                self.allowed_instr.extend([riscv_instr_name_t.EBREAK,
+                                           riscv_instr_name_t.C_EBREAK])
             elif (not cfg.no_ebreak and not cfg.enable_ebreak_in_debug_rom):
-                exclude_instr.extend([riscv_instr_name_t.EBREAK.name,
-                                      riscv_instr_name_t.C_EBREAK.name])
+                exclude_instr.extend([riscv_instr_name_t.EBREAK,
+                                      riscv_instr_name_t.C_EBREAK])
         instr = riscv_instr.get_rand_instr(
             include_instr = self.allowed_instr, exclude_instr = exclude_instr,
             include_group = include_group)

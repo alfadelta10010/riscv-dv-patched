@@ -262,12 +262,30 @@ class riscv_instr:
                 logging.critical("[%s] Cannot generate random instruction", riscv_instr.__name__)
                 sys.exit(1)
         else:
+            # The SV implementation (src/isa/riscv_instr.sv) constrains the picked
+            # name with "!(name inside {disallowed_instr})".  The Python port built
+            # disallowed_instr and then never used it, so exclusions were silently
+            # ignored and instructions with hard rd/rs1 constraints (e.g. C_ADDI16SP,
+            # which forces rd == SP) could be returned even when that register was
+            # reserved -- producing an unsatisfiable randomize_gpr() problem.
+            # Callers pass either riscv_instr_name_t members or their string names,
+            # so normalise both sides before filtering.
+            disallowed_set = set()
+            for item in disallowed_instr:
+                if isinstance(item, str):
+                    if item in riscv_instr_name_t.__members__:
+                        disallowed_set.add(riscv_instr_name_t[item])
+                elif isinstance(item, riscv_instr_name_t):
+                    disallowed_set.add(item)
+            if len(allowed_instr) > 0:
+                candidates = allowed_instr
+            elif len(include_instr) > 0:
+                candidates = include_instr
+            else:
+                candidates = cls.instr_names
+            candidates = [i for i in candidates if i not in disallowed_set]
             try:
-                name = random.choice(cls.instr_names)
-                if len(include_instr) > 0:
-                    name = random.choice(include_instr)
-                if len(allowed_instr) > 0:
-                    name = random.choice(allowed_instr)
+                name = random.choice(candidates)
             except Exception:
                 logging.critical("[%s] Cannot generate random instruction", riscv_instr.__name__)
                 sys.exit(1)
