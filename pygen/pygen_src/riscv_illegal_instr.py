@@ -293,12 +293,12 @@ class riscv_illegal_instr:
                 with vsc.if_then(self.opcode == 103):
                     self.func3 == 0
                 with vsc.if_then(self.opcode == 99):
-                    self.func3.inside(vsc.rangelist(2, 3))
+                    self.func3.not_inside(vsc.rangelist(2, 3))
                 with vsc.if_then(self.xlen == 32):
                     with vsc.if_then(self.opcode == 35):
                         self.func3 < 3
                     with vsc.if_then(self.opcode == 3):
-                        self.func3.inside(vsc.rangelist(3, 7))
+                        self.func3.not_inside(vsc.rangelist(3, 7))
                 with vsc.else_then():
                     with vsc.if_then(self.opcode == 35):
                         self.func3 <= 3
