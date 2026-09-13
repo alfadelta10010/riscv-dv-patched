@@ -635,15 +635,29 @@ class riscv_asm_program_gen:
 
     # Setup PMP CSR configuration
     def setup_pmp(self, hart):
-        # TODO
-        pass
+        """Emit the pmp_setup section (src/riscv_asm_program_gen.sv:830-844)."""
+        if not rcs.support_pmp or cfg.pmp_cfg is None:
+            return
+        instr = []
+        if cfg.pmp_cfg.suppress_pmp_setup:
+            # Unrestricted access to all memory from both M and U mode.
+            cfg.pmp_cfg.gen_pmp_enable_all(cfg.scratch_reg, instr)
+        else:
+            cfg.pmp_cfg.gen_pmp_instr([cfg.scratch_reg, cfg.gpr[0]], instr)
+        self.gen_section(pkg_ins.get_label("pmp_setup", hart), instr)
+
     # Generates a directed stream of instructions to write random values to all supported
     # pmpaddr CSRs to test write accessibility.
     # The original CSR values are restored afterwards.
 
     def gen_pmp_csr_write(self, hart):
-        # TODO
-        pass
+        if not rcs.support_pmp or cfg.pmp_cfg is None:
+            return
+        if not cfg.pmp_cfg.enable_write_pmp_csr:
+            return
+        instr = []
+        cfg.pmp_cfg.gen_pmp_write_test([cfg.scratch_reg, cfg.pmp_reg], instr)
+        self.gen_section(pkg_ins.get_label("pmp_csr_write_test", hart), instr)
 
     # Handles creation of a subroutine to initialize any custom CSRs
     def setup_custom_csrs(self, hart):

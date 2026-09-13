@@ -470,11 +470,46 @@ class riscv_instr_gen_config:
     def post_randomize(self):
         # Setup the list all reserved registers
         self.reserved_regs.extend((self.tp, self.sp, self.scratch_reg))
+        self.setup_pmp_cfg()
         # Need to save all loop registers, and RA/T0
         self.min_stack_len_per_program = 2 * (rcs.XLEN // 8)
         logging.info("min_stack_len_per_program value = {}"
                      .format(self.min_stack_len_per_program))
         self.check_setting()  # check if the setting is legal
+
+    def setup_pmp_cfg(self):
+        """Build cfg.pmp_cfg from the command line.
+
+        The SystemVerilog does this at the end of its own post_randomize:
+
+            pmp_cfg = riscv_pmp_cfg::type_id::create("pmp_cfg");
+            pmp_cfg.rand_mode(pmp_cfg.pmp_randomize);
+            pmp_cfg.initialize(require_signature_addr);
+
+        which pyflow left as a comment (`# pmp_cfg = riscv_pmp_cfg  # TODO`).
+        The import is deferred to here rather than done at module level because
+        riscv_pmp_cfg is constructed by this module.
+        """
+        rcs = import_module("pygen_src.target." + self.argv.target +
+                            ".riscv_core_setting")
+        if not rcs.support_pmp:
+            self.pmp_cfg = None
+            return
+        from pygen_src.riscv_pmp_cfg import riscv_pmp_cfg
+        self.pmp_cfg = riscv_pmp_cfg(rcs.XLEN)
+        self.pmp_cfg.pmp_num_regions = self.argv.pmp_num_regions
+        self.pmp_cfg.pmp_granularity = self.argv.pmp_granularity
+        self.pmp_cfg.pmp_randomize = self.argv.pmp_randomize
+        self.pmp_cfg.pmp_allow_illegal_tor = self.argv.pmp_allow_illegal_tor
+        self.pmp_cfg.enable_write_pmp_csr = self.argv.enable_write_pmp_csr
+        self.pmp_cfg.suppress_pmp_setup = self.argv.suppress_pmp_setup
+        if self.argv.pmp_max_offset:
+            self.pmp_cfg.pmp_max_offset = int(self.argv.pmp_max_offset, 16)
+        for i in range(self.pmp_cfg.pmp_num_regions):
+            region = getattr(self.argv, 'pmp_region_{}'.format(i), "")
+            if region:
+                self.pmp_cfg.pmp_region_args[i] = region
+        self.pmp_cfg.initialize(self.require_signature_addr)
 
     def check_setting(self):
         support_64b = 0
@@ -653,6 +688,27 @@ class riscv_instr_gen_config:
                                help = 'stream_name_{}'.format(i), default = "")
             parse.add_argument('--stream_freq_{}'.format(i),
                                help = 'stream_freq_{}'.format(i), default = 4)
+        # PMP options. run.py forwards these from a testlist's gen_opts, and
+        # argparse rejects the whole command line for any it does not know, so
+        # without them "unrecognized arguments: --pmp_randomize=0" killed
+        # riscv_pmp_test before the generator ever started.
+        parse.add_argument('--pmp_num_regions', help='pmp_num_regions',
+                           type=int, default=1)
+        parse.add_argument('--pmp_granularity', help='pmp_granularity',
+                           type=int, default=0)
+        parse.add_argument('--pmp_randomize', help='pmp_randomize',
+                           choices=[0, 1], type=int, default=0)
+        parse.add_argument('--pmp_allow_illegal_tor', help='pmp_allow_illegal_tor',
+                           choices=[0, 1], type=int, default=0)
+        parse.add_argument('--pmp_max_offset', help='pmp_max_offset (hex)',
+                           default="")
+        parse.add_argument('--enable_write_pmp_csr', help='enable_write_pmp_csr',
+                           choices=[0, 1], type=int, default=0)
+        parse.add_argument('--suppress_pmp_setup', help='suppress_pmp_setup',
+                           choices=[0, 1], type=int, default=0)
+        for i in range(16):
+            parse.add_argument('--pmp_region_{}'.format(i),
+                               help='pmp_region_{}'.format(i), default="")
         parse.add_argument('--start_idx', help='start index', type=int, default=0)
         parse.add_argument('--asm_file_name', help='asm file name',
                            default="riscv_asm_test")
