@@ -33,7 +33,7 @@ class riscv_amo_base_instr_stream(riscv_mem_access_stream):
         self.num_mixed_instr = vsc.rand_uint32_t()
         self.offset = vsc.randsz_list_t(vsc.int32_t())
         self.rs1_reg = vsc.randsz_list_t(vsc.enum_t(riscv_reg_t))
-        self.num_of_rs1_reg = vsc.rand_int32_t()
+        self.num_of_rs1_reg = vsc.rand_bit_t(3)
         self.data_page_id = vsc.uint32_t()
         self.max_offset = vsc.uint32_t()
         self.XLEN = vsc.uint32_t(rcs.XLEN)
@@ -46,8 +46,8 @@ class riscv_amo_base_instr_stream(riscv_mem_access_stream):
     def rs1_c(self):
         # TODO constraint size with num_of_rs1_reg
         vsc.solve_order(self.num_of_rs1_reg, self.rs1_reg)
-        self.rs1_reg.size == 1  # self.num_of_rs1_reg
-        self.offset.size == 1  # self.num_of_rs1_reg
+        self.rs1_reg.size == self.num_of_rs1_reg
+        self.offset.size == self.num_of_rs1_reg
         with vsc.foreach(self.rs1_reg, idx = True) as i:
             self.rs1_reg[i].not_inside(vsc.rangelist(cfg.reserved_regs,
                                                      self.reserved_rd, riscv_reg_t.ZERO))
