@@ -326,8 +326,11 @@ class riscv_instr_gen_config:
 
     @vsc.constraint
     def debug_mode_c(self):
-        # TODO
-        pass
+        # TODO: debug_program_instr_cnt / debug_sub_program_instr_cnt ranges
+        # (only under support_debug_mode; debug programs are not ported).
+        # src/riscv_instr_gen_config.sv keeps this outside the debug-mode
+        # guard: the main program and the sub-programs share instr_cnt.
+        self.main_program_instr_cnt + self.sub_program_instr_cnt.sum == self.instr_cnt
 
     # Keep the number of single step iterations relatively small
     @vsc.constraint
