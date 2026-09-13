@@ -318,33 +318,14 @@ class riscv_instr_sequence:
                 idx = random.randrange(0, len(self.instr_string_list))
                 self.instr_string_list.insert(idx, insert_str)
 
-    # riscv_illegal_instr's constraint set intermittently fails to solve -- about
-    # half of all draws on this target, on rv32imc equally, so it is neither a
-    # FyraCore setting nor one of the local patches. pyvsc cannot even produce an
-    # unsat core for it: create_diagnostics() bails out with "internal error:
-    # system should solve" (randomizer.py:443), which means the individual
-    # randsets each solve and only the combination does not -- a solver-ordering
-    # artifact rather than a genuine contradiction. Retrying re-draws under the
-    # exact same constraints, so anything it does produce is still a fully
-    # constrained, valid encoding; it only discards draws the solver gave up on.
-    # Without this a single failed draw aborts the whole test.
-    def randomize_illegal_instr(self, exception_type, equal, max_attempts = 20):
-        for attempt in range(max_attempts):
-            try:
-                with vsc.randomize_with(self.illegal_instr):
-                    if equal:
-                        self.illegal_instr.exception == exception_type
-                    else:
-                        self.illegal_instr.exception != exception_type
-                return True
-            except Exception:
-                continue
-        # Every attempt failed, which is the normal case under the pinned
-        # pyvsc rather than the exception -- so skipping here meant the two
-        # streams named for this stimulus emitted none of it, in every
-        # program. Fall back to a hand-rolled draw instead; see
-        # riscv_illegal_instr.fallback_draw().
-        logging.info("riscv_illegal_instr did not solve in %0d attempts; "
-                     "using the fallback draw", max_attempts)
-        self.illegal_instr.fallback_draw(want_hint=equal)
+    def randomize_illegal_instr(self, exception_type, equal):
+        try:
+            with vsc.randomize_with(self.illegal_instr):
+                if equal:
+                    self.illegal_instr.exception == exception_type
+                else:
+                    self.illegal_instr.exception != exception_type
+        except Exception as e:
+            logging.critical("Cannot randomize riscv_illegal_instr: %s", e)
+            sys.exit(1)
         return True
