@@ -157,7 +157,13 @@ class riscv_lr_sc_instr_stream (riscv_amo_base_instr_stream):
             instr = self.randomize_instr(instr, include_group = [riscv_instr_group_t.RV32I,
                                                                  riscv_instr_group_t.RV32C])
             category = riscv_instr_category_t(int(instr.category))
-            if category not in [riscv_instr_category_t.SYSTEM, riscv_instr_category_t.SYNCH]:
+            group = riscv_instr_group_t(int(instr.group))
+            # Spec section 8.3: only base I (and its compressed forms), no
+            # SYSTEM-opcode instructions -- which includes the CSR category.
+            if (group in [riscv_instr_group_t.RV32I, riscv_instr_group_t.RV32C] and
+                    category not in [riscv_instr_category_t.SYSTEM,
+                                     riscv_instr_category_t.SYNCH,
+                                     riscv_instr_category_t.CSR]):
                 self.insert_instr(instr)
                 i += 1
 
