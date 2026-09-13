@@ -178,7 +178,8 @@ class riscv_amo_instr_stream (riscv_amo_base_instr_stream):
         self.num_of_rs1_reg < 5
 
     def gen_amo_instr(self):
-        for i in range(self.num_amo):
+        rs1_vals = [int(r) for r in self.rs1_reg]
+        for i in range(int(self.num_amo)):
             self.amo_instr.append(riscv_instr.get_rand_instr(
                                   include_category=[riscv_instr_category_t.AMO]))
             with self.amo_instr[i].randomize_with():
@@ -186,8 +187,8 @@ class riscv_amo_instr_stream (riscv_amo_base_instr_stream):
                     self.amo_instr[i].rd.not_inside(vsc.rangelist(self.reserved_rd))
                 with vsc.if_then(cfg.reserved_regs.size > 0):
                     self.amo_instr[i].rd.not_inside(vsc.rangelist(cfg.reserved_regs))
-                self.amo_instr[i].rs1.inside(vsc.rangelist(self.rs1_reg))
-                self.amo_instr[i].rd.inside(vsc.rangelist(self.rs1_reg))
+                self.amo_instr[i].rs1.inside(vsc.rangelist(rs1_vals))
+                self.amo_instr[i].rd.not_inside(vsc.rangelist(rs1_vals))
             self.instr_list.insert(0, self.amo_instr[i])
 
 
