@@ -1232,7 +1232,7 @@ class riscv_asm_program_gen:
                 if not object_h:
                     logging.critical("Cannot create instr stream %0s", name)
                     sys.exit(1)
-                new_instr_stream = copy.deepcopy(object_h)
+                new_instr_stream = object_h
                 if new_instr_stream:
                     new_instr_stream.hart = hart
                     new_instr_stream.label = "{}_{}".format(label, idx)
