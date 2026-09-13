@@ -301,16 +301,20 @@ class riscv_instr:
         allowed_instr = []
         disallowed_instr = []
         # allowed_categories = []
+        # instr_category and instr_group are keyed by name; callers pass either
+        # the enum member or its name.
+        def key(item):
+            return item.name if hasattr(item, "name") else item
         for items in include_category:
-            allowed_instr.extend(cls.instr_category[items])
+            allowed_instr.extend(cls.instr_category[key(items)])
         for items in exclude_category:
-            if items in cls.instr_category:
-                disallowed_instr.extend(cls.instr_category[items])
+            if key(items) in cls.instr_category:
+                disallowed_instr.extend(cls.instr_category[key(items)])
         for items in include_group:
-            allowed_instr.extend(cls.instr_group[items])
+            allowed_instr.extend(cls.instr_group[key(items)])
         for items in exclude_group:
-            if items in cls.instr_group:
-                disallowed_instr.extend(cls.instr_group[items])
+            if key(items) in cls.instr_group:
+                disallowed_instr.extend(cls.instr_group[key(items)])
 
         disallowed_instr.extend(exclude_instr)
 
