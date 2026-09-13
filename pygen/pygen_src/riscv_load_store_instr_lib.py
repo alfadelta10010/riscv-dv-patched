@@ -265,6 +265,27 @@ class riscv_load_store_rand_instr_stream(riscv_load_store_base_instr_stream):
 
 
 # Use a small set of GPR to create various WAW, RAW, WAR hazard scenario
+# Port of src/riscv_load_store_instr_lib.sv:283-301.  The class was missing from
+# pyflow entirely, so riscv_utils.factory() aborted with
+# "Cannot Create object of riscv_hazard_instr_stream" for every testlist entry
+# that requested it (riscv_rand_instr_test in the stock base_testlist).
+# NOTE: the SV version also sets num_of_avail_regs = 6.  That is deliberately not
+# mirrored here because pyflow's riscv_rand_instr_stream.randomize_avail_regs()
+# is still an unimplemented "pass" (riscv_instr_stream.py), so avail_regs is not
+# populated for any stream and the narrower register window would have no effect.
+@vsc.randobj
+class riscv_hazard_instr_stream(riscv_load_store_base_instr_stream):
+    def __init__(self):
+        super().__init__()
+
+    @vsc.constraint
+    def legal_c(self):
+        self.num_load_store.inside(vsc.rangelist(vsc.rng(10, 30)))
+        self.num_mixed_instr.inside(vsc.rangelist(vsc.rng(10, 30)))
+
+
+# Use a small set of address to create various load/store hazard sequence
+# This instruction stream focus more on hazard handling of load store unit.
 @vsc.randobj
 class riscv_load_store_hazard_instr_stream(riscv_load_store_base_instr_stream):
     def __init__(self):
