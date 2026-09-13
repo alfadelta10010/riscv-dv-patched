@@ -100,7 +100,7 @@ class riscv_instr_sequence:
             logging.critical("Cannot randomize program_stack_len")
             sys.exit(1)
         self.instr_stack_enter.push_start_label = self.label_name + "_stack_p"
-        self.instr_stack_enter.gen_push_stack_instr(self.program_stack_len,
+        self.instr_stack_enter.gen_push_stack_instr(self.program_stack_len.get_val(),
                                                     allow_branch = allow_branch)
         self.instr_stream.instr_list = (self.instr_stack_enter.instr_list +
                                         self.instr_stream.instr_list)
@@ -109,7 +109,7 @@ class riscv_instr_sequence:
     # Advance the stack pointer(SP) to release the allocated stack space.
     def gen_stack_exit_instr(self):
         self.instr_stack_exit.cfg = cfg
-        self.instr_stack_exit.gen_pop_stack_instr(self.program_stack_len,
+        self.instr_stack_exit.gen_pop_stack_instr(self.program_stack_len.get_val(),
                                                   self.instr_stack_enter.saved_regs)
         self.instr_stream.instr_list.extend((self.instr_stack_exit.instr_list))
 
