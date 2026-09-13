@@ -267,7 +267,7 @@ class riscv_instr_sequence:
         except Exception:
             logging.critical("Cannot randomize ra")
             sys.exit(1)
-        routine_str = prefix + "addi x{} x{} {}".format(ra.get_val(), cfg.ra, rand_lsb)
+        routine_str = prefix + "addi x{}, x{}, {}".format(int(ra.get_val()), int(cfg.ra), rand_lsb)
         self.instr_string_list.append(routine_str)
         if not cfg.disable_compressed_instr:
             jump_instr.append(riscv_instr_name_t.C_JR)
@@ -281,7 +281,7 @@ class riscv_instr_sequence:
         elif jump_instr[i] == riscv_instr_name_t.C_JR:
             routine_str = prefix + "c.jr x{}".format(ra.get_val())
         elif jump_instr[i] == riscv_instr_name_t.JALR:
-            routine_str = prefix + "jalr x{} x{} 0".format(ra.get_val(), ra.get_val())
+            routine_str = prefix + "jalr x{}, x{}, 0".format(int(ra.get_val()), int(ra.get_val()))
         else:
             logging.critical("Unsupported jump_instr: {}".format(jump_instr[i]))
             sys.exit(1)
