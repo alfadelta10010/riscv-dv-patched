@@ -20,7 +20,8 @@ from pygen_src.riscv_instr_pkg import (mtvec_mode_t, f_rounding_mode_t,
                                        riscv_reg_t, privileged_mode_t,
                                        riscv_instr_group_t, data_pattern_t,
                                        riscv_instr_category_t, satp_mode_t,
-                                       mem_region_t, vreg_init_method_t)
+                                       mem_region_t, vreg_init_method_t,
+                                       privileged_reg_t)
 
 
 # ----------------------------------------------------------------------------
@@ -591,7 +592,7 @@ class riscv_instr_gen_config:
 
         # implemented_csr from riscv_core_setting.py
         for csr in rcs.implemented_csr:
-            if csr in invalid_lvl:
+            if privileged_reg_t(csr).name[0] in invalid_lvl:
                 self.invalid_priv_mode_csrs.append(csr)
 
     def parse_args(self):
