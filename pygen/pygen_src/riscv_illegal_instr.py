@@ -165,7 +165,7 @@ class riscv_illegal_instr:
         if riscv_instr_group_t.RV32B in rcs.supported_isa:
             with vsc.if_then(self.exception.inside(vsc.rangelist(illegal_instr_type_e.kIllegalFunc3,
                                                 illegal_instr_type_e.kIllegalFunc7))):
-                self.opcode.inside(vsc.rangelist([51, 19, 59]))
+                self.opcode.not_inside(vsc.rangelist([51, 19, 59]))
 
     @vsc.constraint
     def illegal_compressed_op_c(self):
