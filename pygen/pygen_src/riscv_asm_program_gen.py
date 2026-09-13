@@ -434,8 +434,25 @@ class riscv_asm_program_gen:
     # Generate some dummy writes to xSTATUS/xIE at the beginning of the test to check
     # repeated writes to these CSRs.
     def gen_dummy_csr_write(self):
-        # TODO
-        pass
+        instr = []
+        if cfg.enable_dummy_csr_write:
+            if cfg.init_privileged_mode == privileged_mode_t.MACHINE_MODE:
+                status, ie = privileged_reg_t.MSTATUS, privileged_reg_t.MIE
+            elif cfg.init_privileged_mode == privileged_mode_t.SUPERVISOR_MODE:
+                status, ie = privileged_reg_t.SSTATUS, privileged_reg_t.SIE
+            elif cfg.init_privileged_mode == privileged_mode_t.USER_MODE:
+                if not rcs.support_umode_trap:
+                    return
+                status, ie = privileged_reg_t.USTATUS, privileged_reg_t.UIE
+            else:
+                logging.critical("Unsupported boot mode")
+                sys.exit(1)
+            instr.extend(("csrr x{}, {}".format(cfg.gpr[0], hex(status)),
+                          "csrr x{}, {}".format(cfg.gpr[1], hex(ie)),
+                          "csrw {}, x{}".format(hex(status), cfg.gpr[0]),
+                          "csrw {}, x{}".format(hex(ie), cfg.gpr[1])))
+            self.format_section(instr)
+            self.instr_stream.extend(instr)
 
     # Initialize general purpose registers with random value
     def init_gpr(self):
@@ -1140,8 +1157,9 @@ class riscv_asm_program_gen:
 
     # Format a code section, without generating it
     def format_section(self, instr):
-        # TODO
-        pass
+        prefix = pkg_ins.format_string(" ", pkg_ins.LABEL_STR_LEN)
+        for i in range(len(instr)):
+            instr[i] = prefix + instr[i]
 
     # Generate a code section
     def gen_section(self, label, instr):
