@@ -25,7 +25,9 @@ from pygen_src.riscv_load_store_instr_lib import (riscv_load_store_rand_instr_st
                                                   riscv_hazard_instr_stream,
                                                   riscv_load_store_hazard_instr_stream,
                                                   riscv_load_store_stress_instr_stream,
-                                                  riscv_single_load_store_instr_stream)
+                                                  riscv_single_load_store_instr_stream,
+                                                  riscv_multi_page_load_store_instr_stream,
+                                                  riscv_mem_region_stress_test)
 
 
 # ----------------------------------------------------------
@@ -45,6 +47,9 @@ def factory(obj_of):
         "riscv_load_store_hazard_instr_stream": riscv_load_store_hazard_instr_stream,
         "riscv_load_store_stress_instr_stream": riscv_load_store_stress_instr_stream,
         "riscv_single_load_store_instr_stream": riscv_single_load_store_instr_stream,
+        "riscv_multi_page_load_store_instr_stream":
+            riscv_multi_page_load_store_instr_stream,
+        "riscv_mem_region_stress_test": riscv_mem_region_stress_test,
         "riscv_loop_instr": riscv_loop_instr
     }
 
