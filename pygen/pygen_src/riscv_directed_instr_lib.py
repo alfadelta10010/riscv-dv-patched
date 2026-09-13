@@ -289,7 +289,7 @@ class riscv_push_stack_instr(riscv_rand_instr_stream):
             self.branch_instr.branch_assigned = 1
             self.push_stack_instr[0].label = self.push_start_label
             self.push_stack_instr[0].has_label = 1
-            self.push_stack_instr.extend(self.branch_instr)
+            self.push_stack_instr = [self.branch_instr] + self.push_stack_instr
         self.mix_instr_stream(self.push_stack_instr)
         for i in range(len(self.instr_list)):
             self.instr_list[i].atomic = 1
