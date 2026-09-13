@@ -303,7 +303,7 @@ class riscv_pop_stack_instr(riscv_rand_instr_stream):
         self.stack_len = 0
         self.num_of_reg_to_save = 0
         self.num_of_redundant_instr = 0
-        self.pop_stack_instr = vsc.list_t(vsc.attr(riscv_instr()))
+        self.pop_stack_instr = []
         self.saved_regs = []
 
     def init(self):
