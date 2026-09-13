@@ -12,6 +12,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 
 import sys
 import math
+import random
 import logging
 import argparse
 import vsc
@@ -464,6 +465,17 @@ class riscv_instr_gen_config:
         for mode in rcs.supported_privileged_mode:
             if mode == privileged_mode_t.SUPERVISOR_MODE:
                 self.support_supervisor_mode = 1
+        # src/riscv_instr_gen_config.sv boot_privileged_mode_dist_c: the boot
+        # mode is random unless +boot_mode pins it. Drawn here rather than in
+        # __init__ because cfg is constructed at import, before the test seeds
+        # the generator.
+        if not self.boot_mode_opts:
+            modes = rcs.supported_privileged_mode
+            weights = {2: [6, 4], 3: [4, 3, 3]}.get(len(modes), [1])
+            self.init_privileged_mode = random.choices(modes[:len(weights)], weights)[0]
+            self.init_privil_mode = self.init_privileged_mode
+            self.invalid_priv_mode_csrs = []
+            self.get_invalid_priv_lvl_csr()
 
     def get_non_reserved_gpr(self):
         pass
