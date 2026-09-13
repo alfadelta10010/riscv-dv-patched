@@ -21,7 +21,8 @@ from bitstring import BitArray
 from importlib import import_module
 from pygen_src.riscv_instr_pkg import (pkg_ins, riscv_instr_category_t, riscv_reg_t,
                                        riscv_instr_name_t, riscv_instr_format_t,
-                                       riscv_instr_group_t, imm_t)
+                                       riscv_instr_group_t, imm_t,
+                                       privileged_mode_t, privileged_reg_t)
 from pygen_src.riscv_instr_gen_config import cfg
 rcs = import_module("pygen_src.target." + cfg.argv.target + ".riscv_core_setting")
 reload(logging)
@@ -197,10 +198,18 @@ class riscv_instr:
                     break
         if cfg.no_dret == 0:
             cls.basic_instr.append(riscv_instr_name_t.DRET)
+        # extend, not append: instr_category[...] is a *list* of names, and
+        # appending it puts the list itself into basic_instr as one element.
+        # get_rand_instr() then indexes instr_template with that list and dies.
         if cfg.no_fence == 0:
-            cls.basic_instr.append(cls.instr_category["SYNCH"])
-        if(cfg.no_csr_instr == 0 and cfg.init_privileged_mode == "MACHINE_MODE"):
-            cls.basic_instr.append(cls.instr_category["CSR"])
+            cls.basic_instr.extend(cls.instr_category["SYNCH"])
+        # cfg.init_privileged_mode is a privileged_mode_t, so comparing it to
+        # the string "MACHINE_MODE" is always False and the CSR category was
+        # never added -- pyflow generated no csrrw/csrrs/csrrc at all, whatever
+        # no_csr_instr said. src/isa/riscv_instr.sv compares against the enum.
+        if (cfg.no_csr_instr == 0 and
+                cfg.init_privileged_mode == privileged_mode_t.MACHINE_MODE):
+            cls.basic_instr.extend(cls.instr_category["CSR"])
         if cfg.no_wfi == 0:
             cls.basic_instr.append(riscv_instr_name_t.WFI)
 
@@ -210,16 +219,61 @@ class riscv_instr:
         cls.exclude_reg.clear()
 
         if cfg.enable_illegal_csr_instruction:
-            cls.exclude_reg = rcs.implemented_csr
+            # list(), not an alias: assigning rcs.implemented_csr directly means
+            # the exclude_reg.clear() above would empty the core setting itself
+            # on a later call, and implemented_csr is read elsewhere (e.g.
+            # riscv_instr_pkg.push_gpr_to_kernel_stack).
+            cls.exclude_reg = list(rcs.implemented_csr)
         elif cfg.enable_access_invalid_csr_level:
-            cls.include_reg = cfg.invalid_priv_mode_csrs
+            cls.include_reg = list(cfg.invalid_priv_mode_csrs)
         else:
-            if cfg.init_privileged_mode == "MACHINE_MODE":      # Machine Mode
-                cls.include_reg.append("MSCRATCH")
-            elif cfg.init_privileged_mode == "SUPERVISOR_MODE":  # Supervisor Mode
-                cls.include_reg.append("SSCRATCH")
-            else:                                               # User Mode
-                cls.include_reg.append("USCRATCH")
+            # Use the scratch register, to avoid the side effect of modifying
+            # another privileged-mode CSR. These have to be privileged_reg_t
+            # members, not their names: the value is written into the csr field
+            # of the generated instruction. Comparing init_privileged_mode
+            # against a string, as the port did, also never matched.
+            if cfg.init_privileged_mode == privileged_mode_t.MACHINE_MODE:
+                cls.include_reg.append(privileged_reg_t.MSCRATCH)
+            elif cfg.init_privileged_mode == privileged_mode_t.SUPERVISOR_MODE:
+                cls.include_reg.append(privileged_reg_t.SSCRATCH)
+            else:
+                cls.include_reg.append(privileged_reg_t.USCRATCH)
+
+    def legalize_csr(self):
+        """Point a CSR instruction at a CSR the filter allows.
+
+        src/isa/riscv_csr_instr.sv constrains the address directly:
+
+            constraint csr_addr_c {
+              if (include_reg.size() > 0) { csr inside {include_reg}; }
+              if (exclude_reg.size() > 0) { !(csr inside {exclude_reg}); }
+            }
+
+        pyflow has no riscv_csr_instr class at all. Its csr field is a plain
+        `vsc.rand_bit_t(12)` whose only constraint, csr_c, is an empty `pass`,
+        and include_reg/exclude_reg are populated by create_csr_filter and then
+        never read by anything. So the address was a uniform draw over all 4096
+        encodings, which would put a random value into whichever machine CSR it
+        landed on -- mtvec and mepc included.
+
+        Applied to the solved value rather than as a constraint, for the same
+        build-order reason as the load/store rs1 legalisation.
+        """
+        if self.category != riscv_instr_category_t.CSR:
+            return
+        if riscv_instr.include_reg:
+            self.csr = int(random.choice(riscv_instr.include_reg))
+            return
+        if riscv_instr.exclude_reg:
+            excluded = {int(c) for c in riscv_instr.exclude_reg}
+            # 4096 encodings against at most a few dozen exclusions, so a
+            # redraw terminates immediately in practice.
+            for _ in range(100):
+                candidate = random.randrange(0, 1 << 12)
+                if candidate not in excluded:
+                    self.csr = candidate
+                    return
+            logging.warning("Could not draw a CSR outside the exclusion list")
 
     @classmethod
     def get_rand_instr(cls, include_instr=[], exclude_instr=[],
@@ -404,8 +458,13 @@ class riscv_instr:
                     asm_str = '{} {}, {} ({})'.format(
                         asm_str, self.rd.name, self.get_imm(), self.rs1.name)
                 elif self.category == riscv_instr_category_t.CSR:
-                    asm_str = '{} {}, 0x{}, {}'.format(
-                        asm_str, self.rd.name, self.csr, self.get_imm())
+                    # '0x{}' formats the value in *decimal* behind a hex
+                    # prefix, so mscratch (832 == 0x340) was emitted as the
+                    # unrelated CSR 0x832. Every CSR address the generator
+                    # produced was wrong; it stayed invisible only because no
+                    # CSR instruction was ever generated.
+                    asm_str = '{} {}, {}, {}'.format(
+                        asm_str, self.rd.name, hex(int(self.csr)), self.get_imm())
                 else:
                     asm_str = '{} {}, {}, {}'.format(
                         asm_str, self.rd.name, self.rs1.name, self.get_imm())
@@ -427,8 +486,8 @@ class riscv_instr:
 
             elif self.format == riscv_instr_format_t.R_FORMAT:
                 if self.category == riscv_instr_category_t.CSR:
-                    asm_str = '{} {}, 0x{}, {}'.format(
-                        asm_str, self.rd.name, self.csr, self.rs1.name)
+                    asm_str = '{} {}, {}, {}'.format(
+                        asm_str, self.rd.name, hex(int(self.csr)), self.rs1.name)
                 elif self.instr_name == riscv_instr_name_t.SFENCE_VMA:
                     asm_str = "sfence.vma x0, x0"
                 else:

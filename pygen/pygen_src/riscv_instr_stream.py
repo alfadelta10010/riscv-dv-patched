@@ -258,7 +258,11 @@ class riscv_rand_instr_stream(riscv_instr_stream):
                     instr.rd != cfg.reserved_regs[i]
                 with vsc.if_then(instr.format == riscv_instr_format_t.CB_FORMAT):
                     instr.rs1 != cfg.reserved_regs[i]
-        # TODO: Add constraint for CSR, floating point register
+        # The CSR address is constrained by riscv_csr_instr in the SystemVerilog
+        # source, which pyflow does not have; legalize_csr() applies the same
+        # include_reg/exclude_reg filter to the solved value.
+        instr.legalize_csr()
+        # TODO: Add constraint for floating point register
         return instr
 
     def get_init_gpr_instr(self, gpr, val):
