@@ -205,25 +205,29 @@ class riscv_asm_program_gen:
                         sub_program_name, num_sub_program,
                         is_debug = 0, prefix = "sub"):
         if num_sub_program > 0:
-            self.sub_program = [0] * num_sub_program
-            for i in range(len(self.sub_program)):
+            # SV fills the caller's per-hart array by reference; build the list
+            # here and store it back into self.sub_program[hart] below.
+            sub_program = [0] * num_sub_program
+            for i in range(len(sub_program)):
                 gt_label_str = pkg_ins.get_label("{}_{}".format(prefix, i + 1), hart)
                 label_name = gt_label_str
                 gt_label_str = riscv_instr_sequence()
-                self.sub_program[i] = gt_label_str
+                sub_program[i] = gt_label_str
+                sub_program[i].is_debug_program = is_debug
                 if(is_debug):
-                    self.sub_program[i].instr_cnt = cfg.debug_sub_program_instr_cnt[i]
+                    sub_program[i].instr_cnt = cfg.debug_sub_program_instr_cnt[i]
                 else:
-                    self.sub_program[i].instr_cnt = cfg.sub_program_instr_cnt[i]
+                    sub_program[i].instr_cnt = cfg.sub_program_instr_cnt[i]
                 self.generate_directed_instr_stream(hart=hart,
                                                     label=label_name,
                                                     original_instr_cnt=
-                                                    self.sub_program[i].instr_cnt,
+                                                    sub_program[i].instr_cnt,
                                                     min_insert_cnt=0,
-                                                    instr_stream=self.sub_program[i].directed_instr)
-                self.sub_program[i].label_name = label_name
-                self.sub_program[i].gen_instr(is_main_program=0, no_branch=cfg.no_branch_jump)
-                sub_program_name.append(self.sub_program[i].label_name)
+                                                    instr_stream=sub_program[i].directed_instr)
+                sub_program[i].label_name = label_name
+                sub_program[i].gen_instr(is_main_program=0, no_branch=cfg.no_branch_jump)
+                sub_program_name.append(sub_program[i].label_name)
+            self.sub_program[hart] = sub_program
 
     def gen_callstack(self, main_program, sub_program,
                       sub_program_name, num_sub_program):
@@ -249,11 +253,11 @@ class riscv_asm_program_gen:
 
     def insert_sub_program(self, sub_program, instr_list):
         if cfg.num_of_sub_program != 0:
-            random.shuffle(self.sub_program)
-            for i in range(len(self.sub_program)):
-                self.sub_program[i].post_process_instr()
-                self.sub_program[i].generate_instr_stream()
-                instr_list.extend((self.sub_program[i].instr_string_list))
+            random.shuffle(sub_program)
+            for i in range(len(sub_program)):
+                sub_program[i].post_process_instr()
+                sub_program[i].generate_instr_stream()
+                instr_list.extend((sub_program[i].instr_string_list))
 
     # ----------------------------------------------------------------------------------
     # Major sections - init, stack, data, test_done etc.
