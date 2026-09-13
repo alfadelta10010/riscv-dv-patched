@@ -102,7 +102,8 @@ class riscv_instr_sequence:
         self.instr_stack_enter.push_start_label = self.label_name + "_stack_p"
         self.instr_stack_enter.gen_push_stack_instr(self.program_stack_len,
                                                     allow_branch = allow_branch)
-        self.instr_stream.instr_list.extend((self.instr_stack_enter.instr_list))
+        self.instr_stream.instr_list = (self.instr_stack_enter.instr_list +
+                                        self.instr_stream.instr_list)
 
     # Recover the saved GPR from the stack
     # Advance the stack pointer(SP) to release the allocated stack space.
