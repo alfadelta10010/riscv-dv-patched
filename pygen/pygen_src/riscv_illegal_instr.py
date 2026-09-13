@@ -132,7 +132,7 @@ class riscv_illegal_instr:
 
     @vsc.constraint
     def legal_rv32_c_slli(self):
-        with vsc.if_then((self.c_msb == 0) and (self.c_op == 2) and (self.xlen == 32)):
+        with vsc.if_then((self.c_msb == 0) & (self.c_op == 2) & (self.xlen == 32)):
             with vsc.if_then(self.exception == illegal_instr_type_e.kReservedCompressedInstr):
                 self.instr_bin[12] == 1
             with vsc.else_then():
