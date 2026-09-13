@@ -37,8 +37,6 @@ class riscv_amo_base_instr_stream(riscv_mem_access_stream):
         self.data_page_id = vsc.uint32_t()
         self.max_offset = vsc.uint32_t()
         self.XLEN = vsc.uint32_t(rcs.XLEN)
-        # User can specify a small group of available registers to generate various hazard condition
-        self.avail_regs = vsc.randsz_list_t(vsc.enum_t(riscv_reg_t))
 
     @vsc.constraint
     def num_of_rs1_reg_c(self):
