@@ -194,35 +194,29 @@ class riscv_illegal_instr:
             with vsc.if_then(self.reserved_c == reserved_c_instr_e.kIllegalCompressed):
                 self.instr_bin[15:0] == 0
             with vsc.if_then(self.reserved_c == reserved_c_instr_e.kReservedAddispn):
-                ((self.instr_bin[15:0] == 0) and (self.c_op == 0))
+                (self.instr_bin[15:5] == 0) & (self.c_op == 0)
             with vsc.if_then(self.reserved_c == reserved_c_instr_e.kReservedAddiw):
-                ((self.c_msb == 1) and (self.c_op == 1) and
-                 (self.instr_bin[11:7] == 0))
+                (self.c_msb == 1) & (self.c_op == 1) & (self.instr_bin[11:7] == 0)
             with vsc.if_then(self.reserved_c == reserved_c_instr_e.kReservedC0):
-                ((self.instr_bin[15:10] == 39) and
-                 (self.instr_bin[6:5] == 2) and (self.c_op == 1))
+                (self.instr_bin[15:10] == 39) & (self.instr_bin[6:5] == 2) & (self.c_op == 1)
             with vsc.if_then(self.reserved_c == reserved_c_instr_e.kReservedC1):
-                ((self.instr_bin[15:10] == 39) and
-                 (self.instr_bin[6:5] == 3) and (self.c_op == 1))
+                (self.instr_bin[15:10] == 39) & (self.instr_bin[6:5] == 3) & (self.c_op == 1)
             with vsc.if_then(self.reserved_c == reserved_c_instr_e.kReservedC2):
-                ((self.c_msb == 4) and (self.c_op == 0))
+                (self.c_msb == 4) & (self.c_op == 0)
             with vsc.if_then(self.reserved_c == reserved_c_instr_e.kReservedAddi16sp):
-                ((self.c_msb == 3) and (self.c_op == 1) and
-                 (self.instr_bin[11:7] == 2) and
-                 (not self.instr_bin[12]) and (self.instr_bin[6:2] == 0))
+                ((self.c_msb == 3) & (self.c_op == 1) & (self.instr_bin[11:7] == 2) &
+                 (self.instr_bin[12] == 0) & (self.instr_bin[6:2] == 0))
             with vsc.if_then(self.reserved_c == reserved_c_instr_e.kReservedLui):
-                ((self.c_msb == 3) and (self.c_op == 1) and
-                 (not self.instr_bin[12]) and (self.instr_bin[6:2] == 0))
+                ((self.c_msb == 3) & (self.c_op == 1) &
+                 (self.instr_bin[12] == 0) & (self.instr_bin[6:2] == 0))
             with vsc.if_then(self.reserved_c == reserved_c_instr_e.kReservedJr):
                 self.instr_bin == 32770
             with vsc.if_then(self.reserved_c == reserved_c_instr_e.kReservedLqsp):
-                ((self.c_msb == 1) and (self.c_op == 2) and
-                 (self.instr_bin[11:7] == 0))
+                (self.c_msb == 1) & (self.c_op == 2) & (self.instr_bin[11:7] == 0)
             with vsc.if_then(self.reserved_c == reserved_c_instr_e.kReservedLwsp):
-                ((self.c_msb == 2) and (self.c_op == 2) and
-                 (self.instr_bin[11:7] == 0))
+                (self.c_msb == 2) & (self.c_op == 2) & (self.instr_bin[11:7] == 0)
             with vsc.if_then(self.reserved_c == reserved_c_instr_e.kReservedLdsp):
-                ((self.c_msb == 3) and (self.c_op == 2) and (self.instr_bin[11:7] == 0))
+                (self.c_msb == 3) & (self.c_op == 2) & (self.instr_bin[11:7] == 0)
 
     @vsc.constraint
     def hint_instr_c(self):
