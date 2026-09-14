@@ -93,6 +93,20 @@ class riscv_callstack_gen:
 
     def post_randomize(self):
         program_cnt = int(self.program_cnt)
+        # program_stack_level_c is the SV constraint and pyvsc's solutions
+        # satisfy it, but they are bimodal: for 6 programs the assembly audit
+        # found all 5 sub-programs at level 1 in 37 of 66 call trees, and a
+        # single level-1 program in 27. The constraint leaves level[0] = 0,
+        # forces level[1] = 1, and lets every later level repeat or exceed its
+        # predecessor by one, so a uniform draw over its solutions is a coin
+        # flip per program (all 5 at level 1: 1/16; exactly one: 1/2).
+        # Levels are capped at max_stack_level as the constraint requires.
+        max_level = int(self.max_stack_level)
+        level = 0
+        self.stack_level[0] = 0
+        for i in range(1, program_cnt):
+            level = min(level + (1 if i == 1 else random.randrange(2)), max_level)
+            self.stack_level[i] = level
         last_level = int(self.stack_level[program_cnt - 1])
         for i in range(len(self.program_h)):
             self.program_h[i].program_id = i
