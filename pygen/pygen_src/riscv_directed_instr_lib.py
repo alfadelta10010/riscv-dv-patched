@@ -270,7 +270,10 @@ class riscv_int_numeric_corner_stream(riscv_directed_instr_stream):
         super().__init__()
         self.num_of_avail_regs = 10
         self.num_of_instr = vsc.rand_uint8_t()
-        self.init_val = vsc.randsz_list_t(vsc.rand_bit_t(rcs.XLEN - 1))
+        # src/riscv_directed_instr_lib.sv:431 `rand bit [XLEN-1:0] init_val[]`.
+        # XLEN - 1 made a 31-bit field: 1 << (XLEN-1) truncated to 0 and no
+        # value with bit 31 set could be drawn.
+        self.init_val = vsc.randsz_list_t(vsc.rand_bit_t(rcs.XLEN))
         self.init_val_type = vsc.randsz_list_t(vsc.enum_t(int_numeric_e))
         self.init_instr = []
 
@@ -301,7 +304,8 @@ class riscv_int_numeric_corner_stream(riscv_directed_instr_stream):
             if self.init_val_type[i] == int_numeric_e.Zero:
                 self.init_val[i] = 0
             elif self.init_val_type[i] == int_numeric_e.AllOne:
-                self.init_val[i] = 1
+                # SV: init_val[i] = '1 (every bit set), not 1.
+                self.init_val[i] = (1 << rcs.XLEN) - 1
             elif self.init_val_type[i] == int_numeric_e.NegativeMax:
                 self.init_val[i] = 1 << (rcs.XLEN - 1)
             self.init_instr[i] = riscv_pseudo_instr()
