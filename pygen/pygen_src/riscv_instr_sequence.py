@@ -325,7 +325,55 @@ class riscv_instr_sequence:
                 idx = random.randrange(len(self.instr_string_list) + 1)
                 self.instr_string_list.insert(idx, insert_str)
 
+    # Every 16-bit word hint_instr_c accepts, filtered by legal_rv32_c_slli
+    # (which keeps bit 12 clear for C.SLLI-space words on RV32: shamt[5] = 1
+    # is not a HINT there, and Spike's c_slli.h requires rvc_zimm() < xlen).
+    _hint_words = None
+
+    @classmethod
+    def hint_words(cls):
+        if cls._hint_words is None:
+            words = []
+            for w in range(1 << 16):
+                c_op, c_msb = w & 3, w >> 13
+                b12, rd, lo, b12_11 = (w >> 12) & 1, (w >> 7) & 31, (w >> 2) & 31, (w >> 11) & 3
+                if (c_msb == 0 and c_op == 2 and rcs.XLEN == 32 and b12):
+                    continue
+                if ((c_msb == 0 and c_op == 1 and b12 == 0 and lo == 0) or         # C.ADDI
+                        (c_msb == 2 and c_op == 1 and rd == 0) or                   # C.LI
+                        (c_msb == 4 and c_op == 1 and b12_11 == 0 and lo == 0) or   # C.SRAI64, C.SRLI64
+                        (c_msb == 4 and c_op == 2 and rd == 0 and lo != 0) or       # C.MV
+                        (c_msb == 3 and c_op == 1 and rd == 0 and (b12 or lo)) or   # C.LUI
+                        (c_msb == 0 and c_op == 2 and rd == 0) or                   # C.SLLI
+                        (c_msb == 0 and c_op == 2 and rd != 0 and b12 == 0 and lo == 0) or  # C.SLLI64
+                        (c_msb == 4 and c_op == 2 and rd == 0 and b12 and lo != 0)):        # C.ADD
+                    words.append(w)
+            cls._hint_words = words
+        return cls._hint_words
+
+    # hint_instr_c matches src/riscv_illegal_instr.sv:298-322, but pyvsc's
+    # solutions concentrate on the lowest-bit words: in the ea5573d audit
+    # 0x8006, 0x6005, 0x4001, 0x8001 and 0x0002 were 63% of all HINTs. Draw
+    # the word uniformly from the constraint's solutions and let the solver
+    # confirm it against every other constraint of riscv_illegal_instr,
+    # drawing again if it refuses.
+    def randomize_hint_instr(self):
+        words = self.hint_words()
+        for _ in range(1000):
+            word = random.choice(words)
+            try:
+                with vsc.randomize_with(self.illegal_instr):
+                    self.illegal_instr.exception == illegal_instr_type_e.kHintInstr
+                    self.illegal_instr.instr_bin[15:0] == word
+                return True
+            except Exception:
+                continue
+        logging.critical("Cannot randomize riscv_illegal_instr as a HINT")
+        sys.exit(1)
+
     def randomize_illegal_instr(self, exception_type, equal):
+        if equal and exception_type == illegal_instr_type_e.kHintInstr:
+            return self.randomize_hint_instr()
         try:
             with vsc.randomize_with(self.illegal_instr):
                 if equal:
