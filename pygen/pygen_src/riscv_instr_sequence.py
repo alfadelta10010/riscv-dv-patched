@@ -305,7 +305,9 @@ class riscv_instr_sequence:
                 insert_str = "{}.4byte {} # {}".format(pkg_ins.indent,
                                                        self.illegal_instr.get_bin_str(),
                                                        self.illegal_instr.comment)
-                idx = random.randrange(0, len(self.instr_string_list))
+                # SV $urandom_range(0, size()) includes size(): the word may
+                # also go after the last line.
+                idx = random.randrange(len(self.instr_string_list) + 1)
                 self.instr_string_list.insert(idx, insert_str)
         bin_instr_cnt = int(self.instr_cnt * cfg.hint_instr_ratio / 1000)
         if bin_instr_cnt >= 0:
@@ -318,7 +320,9 @@ class riscv_instr_sequence:
                 insert_str = "{}.2byte {} # {}".format(pkg_ins.indent,
                                                        self.illegal_instr.get_bin_str(),
                                                        self.illegal_instr.comment)
-                idx = random.randrange(0, len(self.instr_string_list))
+                # SV $urandom_range(0, size()) includes size(): the word may
+                # also go after the last line.
+                idx = random.randrange(len(self.instr_string_list) + 1)
                 self.instr_string_list.insert(idx, insert_str)
 
     def randomize_illegal_instr(self, exception_type, equal):
