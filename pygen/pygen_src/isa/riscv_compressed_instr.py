@@ -211,8 +211,13 @@ class riscv_compressed_instr(riscv_instr):
             # This is needed to resume execution from epc+4 after ebreak handling
             if self.instr_name is riscv_instr_name_t.C_EBREAK:
                 asm_str = "c.ebreak;c.nop;"
-            if self.comment != "":
-                asm_str = asm_str + " #" + self.comment
+        # src/isa/riscv_compressed_instr.sv appends the comment after the
+        # SYSTEM/non-SYSTEM if-else, for every compressed instruction. Inside
+        # the else only C.EBREAK kept it, so a stream ending in a compressed
+        # instruction lost its "#end" marker and c.beqz/c.bnez loop branches
+        # and c.jalr calls lost theirs.
+        if self.comment != "":
+            asm_str = asm_str + " #" + self.comment
         return asm_str.lower()
 
     # TODO
