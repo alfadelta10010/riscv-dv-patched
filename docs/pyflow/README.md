@@ -57,6 +57,28 @@ Each is explained in its commit.
   from the SV's distribution/constraints, because pyvsc does not reproduce
   them in-solve; `randomize_gpr` constrains rs1/rs2/rd to the drawn values.
 
+## Known open defects
+
+An audit of the programs generated at `ea5573d`, against what each test is
+meant to exercise, found generator defects that are not fixed yet:
+
+* M-mode boot drops the privileged-mode switch routine
+  (`gen_privileged_mode_switch_routine` resets its instruction list on every
+  loop pass and appends it after the loop): no mstatus/mie write, no mret.
+* `generate_instr_stream` inserts `.align 2` once per instruction, and for
+  sub-programs instead of main, so injected illegal/HINT words can land where
+  they never execute and main is not 4-byte aligned.
+* `riscv_int_numeric_corner_stream` uses 31-bit init values and AllOne = 1, so
+  all-ones and INT_MIN never occur.
+* `riscv_jal_instr` draws only JAL (not C_J/C_JAL) and omits T1 from the rd
+  weights.
+* Compressed `convert2asm` drops the instruction comment except for SYSTEM
+  instructions, losing stream and loop markers.
+* `mstatus_vs_c` is unported; push/pop filler counts are 3..9 instead of 3..10.
+* Solution skew with faithful constraints: rd biased towards x0 (base) and a3
+  (compressed), loop limit collapsing to init + step, instruction counts at the
+  lower bound 10, bimodal call-stack levels, concentrated HINT encodings.
+
 ## Not ported, or not reachable from the rv32imac target
 
 * Debug mode: debug ROM, debug sub-programs, dcsr/dpc handshakes.
