@@ -230,16 +230,32 @@ class riscv_jal_instr(riscv_rand_instr_stream):
         # Last instruction
         self.jump_end = self.randomize_instr(self.jump_end)
         self.jump_end.label = "{}".format(self.num_of_jump_instr)
+        # src/riscv_directed_instr_lib.sv:248-252:
+        #   if (has_rd) {
+        #     rd dist {RA := 5, T1 := 2, [SP:T0] :/ 1, [T2:T6] :/ 2};
+        #     !(rd inside {cfg.reserved_regs});
+        #   }
+        # The port left out T1 := 2, and vsc.dist only nudges the solver, so
+        # draw rd from these weights over the non-reserved registers and pin it,
+        # as cfg.post_randomize does for ra_c.
+        reserved = {int(r) for r in cfg.reserved_regs}
+        rd_weights = {riscv_reg_t.RA: 5.0, riscv_reg_t.T1: 2.0}
+        for r in riscv_reg_t:
+            if riscv_reg_t.SP <= r <= riscv_reg_t.T0:
+                rd_weights[r] = 1.0 / (riscv_reg_t.T0 - riscv_reg_t.SP + 1)
+            elif riscv_reg_t.T2 <= r <= riscv_reg_t.T6:
+                rd_weights[r] = 2.0 / (riscv_reg_t.T6 - riscv_reg_t.T2 + 1)
+        rd_legal = [r for r in rd_weights if int(r) not in reserved]
         for i in range(self.num_of_jump_instr):
             # SV: get_rand_instr(.include_instr({jal})) -- the whole list,
             # {JAL, C_J, C_JAL} on RV32 with compressed instructions enabled.
             self.jump[i] = riscv_instr.get_rand_instr(include_instr = jal)
-            with self.jump[i].randomize_with():
-                if self.jump[i].has_rd:
-                    vsc.dist(self.jump[i].rd, [vsc.weight(riscv_reg_t.RA, 5), vsc.weight(
-                        vsc.rng(riscv_reg_t.SP, riscv_reg_t.T0), 1),
-                        vsc.weight(vsc.rng(riscv_reg_t.T2, riscv_reg_t.T6), 2)])
-                    self.jump[i].rd.not_inside(cfg.reserved_regs)
+            if self.jump[i].has_rd:
+                rd = random.choices(rd_legal, [rd_weights[r] for r in rd_legal])[0]
+                with self.jump[i].randomize_with():
+                    self.jump[i].rd == rd
+            else:
+                self.jump[i].randomize()
             self.jump[i].label = "{}".format(i)
 
         for i in range(len(order)):
