@@ -447,8 +447,16 @@ class riscv_instr_gen_config:
 
     @vsc.constraint
     def mstatus_vs_c(self):
-        # TODO
-        pass
+        # src/riscv_instr_gen_config.sv:470-476
+        #   if (enable_vector_extension) mstatus_vs == 2'b01;
+        #   else                         mstatus_vs == 2'b00;
+        # enable_vector_extension is read from the command line in __init__,
+        # before pyvsc builds the field model, so a Python branch picks the
+        # constraint.
+        if int(self.enable_vector_extension):
+            self.mstatus_vs == 1
+        else:
+            self.mstatus_vs == 0
 
     def setup_instr_distribution(self):
         if self.dist_control_mode:
