@@ -178,8 +178,77 @@ class riscv_loop_instr(riscv_rand_instr_stream):
                          "(%0d); moving it to %0d", i, limit[i], new_reg)
             self.loop_limit_reg[i] = new_reg
 
+    # loop_c above is the SV constraint (src/riscv_loop_instr.sv:56-110) and
+    # every pyvsc solution satisfies it, but the solutions are heavily skewed:
+    # over the 3,048 loops of the ea5573d assembly audit the limit collapsed
+    # to init + step, so 80% of BNE and 88% of C.BNEZ loops never iterated,
+    # where a uniform draw over the constraint's solutions gives 18% and 37%.
+    #
+    # With `solve branch_type before loop_init_val/step/limit`, the SV picks
+    # the branch type first and then any (init, step, limit) the constraint
+    # allows for it. Keep the solved branch type and redraw the values
+    # uniformly from that set, enumerated from the SV text:
+    #
+    #   branch_type inside {C_BNEZ, C_BEQZ}  -> limit == 0
+    #   else                                 -> limit inside {[-20:20]}
+    #   branch_type inside {C_BNEZ, C_BEQZ, BEQ, BNE} ->
+    #       (limit - init) % step == 0 && limit != init
+    #   BGE  -> step < 0
+    #   BGEU -> step < 0; init > 0; step + limit > 0
+    #   BLT  -> step > 0
+    #   BLTU -> step > 0; limit > 0
+    #   init inside {[-10:10]}; step inside {[-10:10]}
+    #   init < limit -> step > 0, else step < 0
+    #
+    # step == 0 satisfies no branch: the last implication needs step != 0 (and
+    # an SV `% 0` is X, which fails the equality constraint).
+    _loop_val_space = {}
+
+    @classmethod
+    def loop_val_space(cls, branch):
+        if branch in cls._loop_val_space:
+            return cls._loop_val_space[branch]
+        n = riscv_instr_name_t
+        sols = []
+        for init in range(-10, 11):
+            for step in range(-10, 11):
+                if step == 0:
+                    continue
+                limits = [0] if branch in (n.C_BNEZ, n.C_BEQZ) else range(-20, 21)
+                for limit in limits:
+                    if (step > 0) != (init < limit):
+                        continue
+                    if branch in (n.C_BNEZ, n.C_BEQZ, n.BEQ, n.BNE):
+                        ok = limit != init and (limit - init) % step == 0
+                    elif branch == n.BGE:
+                        ok = step < 0
+                    elif branch == n.BGEU:
+                        ok = step < 0 and init > 0 and step + limit > 0
+                    elif branch == n.BLT:
+                        ok = step > 0
+                    elif branch == n.BLTU:
+                        ok = step > 0 and limit > 0
+                    else:
+                        ok = False
+                    if ok:
+                        sols.append((init, step, limit))
+        if not sols:
+            logging.critical("No loop values satisfy loop_c for %s", branch.name)
+            sys.exit(1)
+        cls._loop_val_space[branch] = sols
+        return sols
+
+    def legalize_loop_vals(self):
+        for i in range(int(self.num_of_nested_loop)):
+            branch = riscv_instr_name_t(int(self.branch_type[i]))
+            init, step, limit = random.choice(self.loop_val_space(branch))
+            self.loop_init_val[i] = init
+            self.loop_step_val[i] = step
+            self.loop_limit_val[i] = limit
+
     def post_randomize(self):
         self.legalize_loop_regs()
+        self.legalize_loop_vals()
         for i in range(len(self.loop_cnt_reg)):
             self.reserved_rd.append(self.loop_cnt_reg[i])
         for i in range(len(self.loop_limit_reg)):
