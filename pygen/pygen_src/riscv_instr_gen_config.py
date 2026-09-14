@@ -499,6 +499,26 @@ class riscv_instr_gen_config:
         pass
 
     def post_randomize(self):
+        # default_c / debug_mode_c are the SV constraints
+        # (src/riscv_instr_gen_config.sv:279-319):
+        #   main_program_instr_cnt inside {[10 : instr_cnt]};
+        #   foreach (sub_program_instr_cnt[i]) sub_program_instr_cnt[i] inside {[10 : instr_cnt]};
+        #   main_program_instr_cnt + sub_program_instr_cnt.sum() == instr_cnt;
+        # pyvsc satisfies them but piles solutions onto the lower bound: 93 of
+        # 440 counts in the ea5573d audit were exactly 10, and every program
+        # with sub-programs had at least one 10-instruction shell. Redraw the
+        # split uniformly over the same solutions: every composition of
+        # instr_cnt into 1 + num_of_sub_program parts of at least 10
+        # (stars and bars over the counts above the bound).
+        parts = 1 + int(self.num_of_sub_program)
+        spare = int(self.instr_cnt) - 10 * parts
+        if spare >= 0:
+            slots = spare + parts - 1
+            bars = [-1] + sorted(random.sample(range(slots), parts - 1)) + [slots]
+            cnts = [10 + bars[k + 1] - bars[k] - 1 for k in range(parts)]
+            self.main_program_instr_cnt = cnts[0]
+            for k in range(1, parts):
+                self.sub_program_instr_cnt[k - 1] = cnts[k]
         # src/riscv_instr_gen_config.sv ra_c:
         #   ra dist {RA := 3, T1 := 2, [SP:T0] :/ 1, [T2:T6] :/ 4};
         # drawn over the values ra_c and reserve_scratch_reg_c leave legal.
