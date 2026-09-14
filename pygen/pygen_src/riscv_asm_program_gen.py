@@ -647,7 +647,11 @@ class riscv_asm_program_gen:
             if cfg.require_signature_addr:
                 # TODO
                 pass
-        self.instr_stream.extend(instr)
+            # src/riscv_asm_program_gen.sv:807 appends inside the loop
+            # (`instr_stream = {instr_stream, instr};`). Appending after it
+            # kept only the last pass's list, which `instr = []` had already
+            # emptied unless the boot mode was the last supported mode.
+            self.instr_stream.extend(instr)
 
     # Setup EPC before entering target privileged mode
     def setup_epc(self, hart):
