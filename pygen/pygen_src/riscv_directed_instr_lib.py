@@ -340,7 +340,8 @@ class riscv_push_stack_instr(riscv_rand_instr_stream):
             logging.error('stack len [{}] is not enough to store {} regs'
                           .format(self.stack_len, self.num_of_reg_to_save))
             sys.exit(1)
-        self.num_of_redundant_instr = random.randrange(3, 10)
+        # SV $urandom_range(3,10) includes 10; randrange excludes its stop.
+        self.num_of_redundant_instr = random.randrange(3, 11)
         self.initialize_instr_list(self.num_of_redundant_instr)
 
     def gen_push_stack_instr(self, stack_len, allow_branch=1):
@@ -414,7 +415,8 @@ class riscv_pop_stack_instr(riscv_rand_instr_stream):
             logging.error('stack len [{}] is not enough to store {} regs'
                           .format(self.stack_len, self.num_of_reg_to_save))
             sys.exit(1)
-        self.num_of_redundant_instr = random.randrange(3, 10)
+        # SV $urandom_range(3,10) includes 10; randrange excludes its stop.
+        self.num_of_redundant_instr = random.randrange(3, 11)
         self.initialize_instr_list(self.num_of_redundant_instr)
 
     def gen_pop_stack_instr(self, stack_len, saved_regs):
