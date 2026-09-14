@@ -231,7 +231,9 @@ class riscv_jal_instr(riscv_rand_instr_stream):
         self.jump_end = self.randomize_instr(self.jump_end)
         self.jump_end.label = "{}".format(self.num_of_jump_instr)
         for i in range(self.num_of_jump_instr):
-            self.jump[i] = riscv_instr.get_rand_instr(include_instr = [jal[0]])
+            # SV: get_rand_instr(.include_instr({jal})) -- the whole list,
+            # {JAL, C_J, C_JAL} on RV32 with compressed instructions enabled.
+            self.jump[i] = riscv_instr.get_rand_instr(include_instr = jal)
             with self.jump[i].randomize_with():
                 if self.jump[i].has_rd:
                     vsc.dist(self.jump[i].rd, [vsc.weight(riscv_reg_t.RA, 5), vsc.weight(
