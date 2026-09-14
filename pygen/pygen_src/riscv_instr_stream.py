@@ -278,13 +278,49 @@ class riscv_rand_instr_stream(riscv_instr_stream):
         instr = self.randomize_gpr(instr)
         return instr
 
+    # Formats whose register fields are the 3-bit rs1'/rs2'/rd' (S0..A5),
+    # as in riscv_compressed_instr.rvc_csr_c.
+    _short_reg_formats = (riscv_instr_format_t.CIW_FORMAT, riscv_instr_format_t.CL_FORMAT,
+                          riscv_instr_format_t.CS_FORMAT, riscv_instr_format_t.CB_FORMAT,
+                          riscv_instr_format_t.CA_FORMAT)
+
+    def gpr_preference(self, instr, avail):
+        """One uniformly drawn register per operand, from the values
+        randomize_gpr's own constraints allow for it."""
+        excluded = {int(r) for r in cfg.reserved_regs} | {int(r) for r in self.reserved_rd}
+        pool = avail if avail else [int(r) for r in riscv_reg_t]
+        short = instr.format in self._short_reg_formats
+        prefs = []
+        for field in ('rd', 'rs1', 'rs2'):
+            if not int(getattr(instr, 'has_' + field)):
+                continue
+            regs = pool
+            if field == 'rd' or (field == 'rs1' and
+                                 instr.format == riscv_instr_format_t.CB_FORMAT):
+                regs = [r for r in regs if r not in excluded]
+            if short:
+                regs = [r for r in regs if riscv_reg_t.S0 <= r <= riscv_reg_t.A5]
+            if regs:
+                prefs.append((field, random.choice(regs)))
+        return prefs
+
     def randomize_gpr(self, instr):
         # The current register values, not the list field: an `inside` over a
         # random-size list builds no terms in pyvsc, so rs1/rs2/rd were never
         # restricted to avail_regs. Read before entering the constraint scope,
         # where the field would be an expression.
         avail = [int(r) for r in self.avail_regs]
+        # src/riscv_instr_stream.sv randomize_gpr() states no preference among
+        # the legal registers, but pyvsc's solutions have one: in the ea5573d
+        # audit x0 was rd on 13.2% of 723k base-encoding writes (uniform over
+        # the legal values: 3.4%) and a3 on 26.6% of compressed writes
+        # (uniform over S0..A5: 12.5%). A soft constraint towards a uniformly
+        # drawn legal register removes the bias; it yields to every hard
+        # constraint an instruction adds (C.ADDI16SP rd == SP, no-HINT rd != 0).
+        prefs = self.gpr_preference(instr, avail)
         with instr.randomize_with() as it:
+            for field, reg in prefs:
+                vsc.soft(getattr(instr, field) == reg)
             if avail:
                 with vsc.if_then(instr.has_rs1):
                     instr.rs1.inside(vsc.rangelist(*avail))
