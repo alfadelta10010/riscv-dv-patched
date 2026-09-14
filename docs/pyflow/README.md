@@ -61,7 +61,13 @@ Each is explained in its commit.
   from the SV's `dist` weights) instead, and the constraint is kept:
   * the main/sub-program instruction-count split (uniform composition of
     `instr_cnt`, every part >= 10);
-  * call-stack levels (one coin flip per program);
+  * call-stack levels (one coin flip per program). With the skewed solve,
+    main called all five sub-programs directly in about half of the programs;
+    with the SV's distribution half the programs have a single level-1
+    sub-program. main then makes fewer calls, and a forward branch taken over
+    one skips that whole subtree (the SV does the same). On the AlphaOneSoC
+    sandbox run this lowered executed body coverage from 57% to 48% and
+    sub-programs entered from 229 to 181 of 370;
   * loop `(init, step, limit)` for the solved branch type;
   * HINT encodings (a uniform word from `hint_instr_c`, confirmed by the
     solver);
