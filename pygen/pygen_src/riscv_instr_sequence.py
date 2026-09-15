@@ -12,6 +12,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 import re
 import sys
 import random
+import bisect
 import logging
 import vsc
 from importlib import import_module
@@ -58,6 +59,9 @@ class riscv_instr_sequence:
         self.directed_instr = []    # List of all directed instruction stream
         self.illegal_instr_pct = 0  # Percentage of illegal instructions
         self.hint_instr_pct = 0     # Percentage of hint instructions
+        # First instruction of every sub-program call stream inserted by
+        # insert_jump_instr (by object identity), see post_process_instr.
+        self.call_starts = set()
         self.instr_stack_enter = riscv_push_stack_instr()
         self.instr_stack_exit = riscv_pop_stack_instr()
         self.illegal_instr = riscv_illegal_instr()
@@ -135,6 +139,7 @@ class riscv_instr_sequence:
         branch_idx = [None] * 30
         j = 0
         branch_target = defaultdict(lambda: None)
+        call_labels = []
         # Insert directed instructions, it's randomly mixed with the random instruction stream.
         for instr in self.directed_instr:
             self.instr_stream.insert_instr_stream(instr.instr_list)
@@ -165,6 +170,17 @@ class riscv_instr_sequence:
                 self.instr_stream.instr_list[i].label = "{}".format(label_idx)
                 self.instr_stream.instr_list[i].is_local_numeric_label = 1
                 label_idx += 1
+            elif id(self.instr_stream.instr_list[i]) in self.call_starts:
+                # Deliberate divergence from src/riscv_instr_sequence.sv (see
+                # the branch clamp below): the start of a sub-program call
+                # stream may be a branch target, so a branch never has to jump
+                # past a call. Landing on the first instruction of an atomic
+                # stream runs the whole stream.
+                self.instr_stream.instr_list[i].has_label = 1
+                self.instr_stream.instr_list[i].label = "{}".format(label_idx)
+                self.instr_stream.instr_list[i].is_local_numeric_label = 1
+                call_labels.append(label_idx)
+                label_idx += 1
         # Generate branch target
         for i in range(len(branch_idx)):
             branch_idx[i] = random.randint(1, cfg.max_branch_step)
@@ -182,6 +198,17 @@ class riscv_instr_sequence:
                     branch_idx[branch_cnt]
                 if(branch_target_label >= label_idx):
                     branch_target_label = label_idx - 1
+                # Deliberate divergence, for bug-finding reach: the SV lets a
+                # random forward branch land past a sub-program call, and a
+                # taken branch then skips the call and the whole sub-program
+                # tree under it. With the SV's call-stack distribution main
+                # often makes a single call, and on the AlphaOneSoC sandbox run
+                # at 3af4ba2 only 48% of the generated body executed and 181 of
+                # 370 sub-programs were entered. Clamp the target to the start
+                # of the next call instead, so the call always runs.
+                k = bisect.bisect_left(call_labels, self.instr_stream.instr_list[j].idx)
+                if k < len(call_labels) and branch_target_label > call_labels[k]:
+                    branch_target_label = call_labels[k]
                 branch_cnt += 1
                 if(branch_cnt == len(branch_idx)):
                     branch_cnt = 0
@@ -215,6 +242,7 @@ class riscv_instr_sequence:
         jump_instr.idx = idx
         jump_instr.use_jalr = self.is_main_program
         jump_instr.gen_jump_instr()
+        self.call_starts.add(id(jump_instr.instr_list[0]))
         self.instr_stream.insert_instr_stream(jump_instr.instr_list)
         logging.info("{} -> {}...done".format(
             riscv_instr_name_t(int(jump_instr.jump.instr_name)).name, target_label))
