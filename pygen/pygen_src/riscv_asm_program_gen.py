@@ -92,11 +92,6 @@ class riscv_asm_program_gen:
                 self.gen_store_fault_handler(hart)
                 if hart == 0:
                     self.gen_test_done()
-                    # Keep the whole exit path ahead of main, not just
-                    # test_done: a locked PMP entry denying execution over
-                    # main binds M-mode too, and ecall_handler jumps to
-                    # write_tohost.
-                    self.gen_program_end(hart)
             # Generate sub program
             self.gen_sub_program(hart, self.sub_program[hart],
                                  sub_program_name, cfg.num_of_sub_program)
@@ -138,8 +133,7 @@ class riscv_asm_program_gen:
             self.insert_sub_program(self.sub_program[hart], self.instr_stream)
             logging.info("Main/sub program generation...done")
             # program end
-            if not rcs.support_pmp or cfg.bare_program_mode:
-                self.gen_program_end(hart)
+            self.gen_program_end(hart)
             if not cfg.bare_program_mode:
                 # Generate debug rom section
                 if rcs.support_debug_mode:
