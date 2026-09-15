@@ -284,13 +284,15 @@ class riscv_rand_instr_stream(riscv_instr_stream):
                           riscv_instr_format_t.CS_FORMAT, riscv_instr_format_t.CB_FORMAT,
                           riscv_instr_format_t.CA_FORMAT)
 
-    def gpr_preference(self, instr, avail):
-        """One uniformly drawn register per operand, from the values
-        randomize_gpr's own constraints allow for it."""
+    # Draws before randomize_gpr falls back to an unpinned solve.
+    _gpr_max_draws = 200
+
+    def gpr_pools(self, instr, avail):
+        """Every value randomize_gpr's constraints leave each operand."""
         excluded = {int(r) for r in cfg.reserved_regs} | {int(r) for r in self.reserved_rd}
         pool = avail if avail else [int(r) for r in riscv_reg_t]
         short = instr.format in self._short_reg_formats
-        prefs = []
+        pools = []
         for field in ('rd', 'rs1', 'rs2'):
             if not int(getattr(instr, 'has_' + field)):
                 continue
@@ -301,26 +303,13 @@ class riscv_rand_instr_stream(riscv_instr_stream):
             if short:
                 regs = [r for r in regs if riscv_reg_t.S0 <= r <= riscv_reg_t.A5]
             if regs:
-                prefs.append((field, random.choice(regs)))
-        return prefs
+                pools.append((field, regs))
+        return pools
 
-    def randomize_gpr(self, instr):
-        # The current register values, not the list field: an `inside` over a
-        # random-size list builds no terms in pyvsc, so rs1/rs2/rd were never
-        # restricted to avail_regs. Read before entering the constraint scope,
-        # where the field would be an expression.
-        avail = [int(r) for r in self.avail_regs]
-        # src/riscv_instr_stream.sv randomize_gpr() states no preference among
-        # the legal registers, but pyvsc's solutions have one: in the ea5573d
-        # audit x0 was rd on 13.2% of 723k base-encoding writes (uniform over
-        # the legal values: 3.4%) and a3 on 26.6% of compressed writes
-        # (uniform over S0..A5: 12.5%). A soft constraint towards a uniformly
-        # drawn legal register removes the bias; it yields to every hard
-        # constraint an instruction adds (C.ADDI16SP rd == SP, no-HINT rd != 0).
-        prefs = self.gpr_preference(instr, avail)
+    def solve_gpr(self, instr, avail, pins):
         with instr.randomize_with() as it:
-            for field, reg in prefs:
-                vsc.soft(getattr(instr, field) == reg)
+            for field, reg in pins:
+                getattr(instr, field) == reg
             if avail:
                 with vsc.if_then(instr.has_rs1):
                     instr.rs1.inside(vsc.rangelist(*avail))
@@ -339,6 +328,33 @@ class riscv_rand_instr_stream(riscv_instr_stream):
                     instr.rd != cfg.reserved_regs[i]
                 with vsc.if_then(instr.format == riscv_instr_format_t.CB_FORMAT):
                     instr.rs1 != cfg.reserved_regs[i]
+
+    def randomize_gpr(self, instr):
+        # The current register values, not the list field: an `inside` over a
+        # random-size list builds no terms in pyvsc, so rs1/rs2/rd were never
+        # restricted to avail_regs. Read before entering the constraint scope,
+        # where the field would be an expression.
+        avail = [int(r) for r in self.avail_regs]
+        # IEEE 1800 18.5.10: the solver picks uniformly among all legal value
+        # combinations. pyvsc does not (x0 was rd on 13% of base writes, a3 on
+        # ~80% of C.ANDI/C.LW rd). Rejection sampling reproduces the standard's
+        # distribution exactly: draw a tuple uniformly from every value
+        # randomize_gpr's own constraints allow each operand, pin it, and draw
+        # again whenever the instruction's other constraints refuse it; the
+        # accepted tuples are then uniform over the legal combinations.
+        pools = self.gpr_pools(instr, avail)
+        for _ in range(self._gpr_max_draws if pools else 0):
+            pins = [(field, random.choice(regs)) for field, regs in pools]
+            try:
+                self.solve_gpr(instr, avail, pins)
+                break
+            except Exception:
+                continue
+        else:
+            if pools:
+                logging.info("randomize_gpr: no pinned draw accepted for %s",
+                             instr.instr_name.name)
+            self.solve_gpr(instr, avail, [])
         # The CSR address is constrained by riscv_csr_instr in the SystemVerilog
         # source, which pyflow does not have; legalize_csr() applies the same
         # include_reg/exclude_reg filter to the solved value.
