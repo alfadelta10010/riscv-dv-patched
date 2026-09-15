@@ -27,10 +27,7 @@ class riscv_amo_instr(riscv_instr):
 
     @vsc.constraint
     def aq_rl_c(self):
-        # The ratified A extension fixes funct7[1:0] (bits 26:25) at zero; the
-        # aq/rl variants set them and are not standard encodings.
-        self.aq == 0
-        self.rl == 0
+        self.aq & self.rl == 0
 
     def get_instr_name(self):
         get_instr_name = self.instr_name.name
