@@ -322,33 +322,22 @@ class riscv_pmp_cfg:
     def gen_pmp_exception_routine(self, scratch_reg, fault_type, instr):
         """Find the PMP entry matching mtval and grant the missing permission.
 
-        Ported from src/riscv_pmp_cfg.sv. scratch_reg holds 7 registers:
+        Ported from src/riscv_pmp_cfg.sv gen_pmp_exception_routine, non-ePMP
+        branch (FyraCore has no mseccfg). scratch_reg holds 7 registers:
           [0] temporary       [1] pmpaddr[i]      [2] pmpcfg CSR value
           [3] 8-bit cfg byte  [4] temporary / A   [5] pmpaddr[i-1]
           [6] loop counter
-
-        Deliberate divergence: exits for a fault PMP cannot have caused end
-        the test as a failure, tohost = (mcause << 1) | 1, where the SV jumps
-        to test_done (a pass) or retries forever:
-          * no entry matches and the access was checked with M-mode
-            privilege -- M-mode is only denied by a matching locked entry.
-            (No match for a U-mode-privilege access is PMP's default deny and
-            ends the test through test_done, as in the SV.);
-          * an entry has an address-matching mode outside OFF/TOR/NA4/NAPOT;
-          * the matching entry already grants the faulting access. The SV
-            ORs the bit in and returns to the same instruction, which faults
-            again forever.
-        A matching *locked* entry keeps the SV behaviour (end or skip).
         """
         s = scratch_reg
         clog = int(math.log2(self.cfg_per_csr))
         xlen = self.xlen
-        mcause, mepc, mtval = (hex(privileged_reg_t.MCAUSE), hex(privileged_reg_t.MEPC),
-                               hex(privileged_reg_t.MTVAL))
-        mstatus = hex(privileged_reg_t.MSTATUS)
+        g = self.pmp_granularity
+        mepc, mtval = hex(privileged_reg_t.MEPC), hex(privileged_reg_t.MTVAL)
+        # Initialize loop counter and save to scratch_reg[6]
         instr.extend(("li x{}, 0".format(s[0]),
                       "mv x{}, x{}".format(s[6], s[0]),
                       "li x{}, 0".format(s[5]),
+                      # calculate next pmpaddr and pmpcfg CSRs to read
                       "0: mv x{}, x{}".format(s[0], s[6]),
                       "mv x{}, x{}".format(s[4], s[0])))
         for i in range(1, self.pmp_num_regions + 1):
@@ -359,6 +348,7 @@ class riscv_pmp_cfg:
             instr.append("csrr x{}, {}".format(s[2], hex(self.base_pmpcfg_addr + (i - 1) // 4)))
             instr.append("j 17f")
         instr.extend((
+            # get correct 8-bit configuration fields
             "17: li x{}, {}".format(s[3], self.cfg_per_csr),
             "slli x{}, x{}, {}".format(s[0], s[6], xlen - clog),
             "srli x{}, x{}, {}".format(s[0], s[0], xlen - clog),
@@ -369,8 +359,10 @@ class riscv_pmp_cfg:
             "slli x{}, x{}, 3".format(s[0], s[0]),
             "add x{}, x{}, x{}".format(s[4], s[4], s[0]),
             "srl x{}, x{}, x{}".format(s[3], s[3], s[4]),
+            # get pmpcfg[i].A field
             "slli x{}, x{}, {}".format(s[4], s[3], xlen - 5),
             "srli x{}, x{}, {}".format(s[4], s[4], xlen - 2),
+            # based on address match mode, branch to appropriate "handler"
             "beqz x{}, 20f".format(s[4]),
             "li x{}, 1".format(s[0]),
             "beq x{}, x{}, 21f".format(s[4], s[0]),
@@ -378,7 +370,10 @@ class riscv_pmp_cfg:
             "beq x{}, x{}, 24f".format(s[4], s[0]),
             "li x{}, 3".format(s[0]),
             "beq x{}, x{}, 25f".format(s[4], s[0]),
-            "j 36f",
+            # Error check, if no address modes match, something has gone wrong
+            "la x{}, test_done".format(s[0]),
+            "jalr x0, x{}, 0".format(s[0]),
+            # increment loop counter and branch back to beginning of loop
             "18: mv x{}, x{}".format(s[0], s[6]),
             "mv x{}, x{}".format(s[5], s[1]),
             "addi x{}, x{}, 1".format(s[0], s[0]),
@@ -386,29 +381,14 @@ class riscv_pmp_cfg:
             "li x{}, {}".format(s[1], self.pmp_num_regions),
             "ble x{}, x{}, 19f".format(s[1], s[0]),
             "j 0b",
-            # No entry matches. If the access was checked with U-mode
-            # privilege this is PMP's default deny: end the test as the SV
-            # does. The trap came from U-mode when MPP == U; a load/store from
-            # M-mode with MPRV set was checked with the pre-trap MPP.
-            "19: csrr x{}, {}".format(s[0], mstatus),
-            "srli x{}, x{}, 11".format(s[0], s[0]),
-            "andi x{}, x{}, 3".format(s[0], s[0]),
-            "beqz x{}, 35f".format(s[0])))
-        if fault_type != exception_cause_t.INSTRUCTION_ACCESS_FAULT:
-            instr.extend(("csrr x{}, {}".format(s[0], mstatus),
-                          "srli x{}, x{}, 17".format(s[0], s[0]),
-                          "andi x{}, x{}, 1".format(s[0], s[0]),
-                          "bnez x{}, 35f".format(s[0])))
-        instr.extend((
-            # Not a fault PMP can have caused: fail the test.
-            "36: csrr x{}, {}".format(s[0], mcause),
-            "slli x3, x{}, 1".format(s[0]),
-            "ori x3, x3, 1",
-            "la x{}, write_tohost".format(s[0]),
+            # If we reach here, no PMP entry has matched the request: jump to
+            # <test_done> ("there is a bug somewhere").
+            "19: nop",
+            "la x{}, test_done".format(s[0]),
             "jalr x0, x{}, 0".format(s[0]),
-            "35: la x{}, test_done".format(s[0]),
-            "jalr x0, x{}, 0".format(s[0]),
+            # OFF: continue looping through the other PMP CSRs
             "20: j 18b",
+            # TOR
             "21: mv x{}, x{}".format(s[0], s[6]),
             "csrr x{}, {}".format(s[4], mtval),
             "srli x{}, x{}, 2".format(s[4], s[4]),
@@ -418,41 +398,33 @@ class riscv_pmp_cfg:
             "22: bgtu x{}, x{}, 18b".format(s[5], s[4]),
             "23: bleu x{}, x{}, 18b".format(s[1], s[4]),
             "j 26f",
+            # NA4
             "24: csrr x{}, {}".format(s[0], mtval),
             "srli x{}, x{}, 2".format(s[0], s[0]),
             "slli x{}, x{}, 2".format(s[4], s[1]),
             "srli x{}, x{}, 2".format(s[4], s[4]),
             "bne x{}, x{}, 18b".format(s[0], s[4]),
             "j 26f",
-            # NAPOT: pmpaddr's trailing ones encode the region size, so mask
-            # them (and the zero above them) off both pmpaddr and mtval >> 2.
-            # y ^ (y + 1) is that mask. The SV masks only pmp_granularity
-            # bits, so a fault inside any NAPOT region wider than one grain
-            # never matched its entry.
+            # NAPOT: mask the bottom pmp_granularity bits of fault_addr and pmpaddr[i]
             "25: csrr x{}, {}".format(s[0], mtval),
             "srli x{}, x{}, 2".format(s[0], s[0]),
-            "addi x{}, x{}, 1".format(s[4], s[1]),
-            "xor x{}, x{}, x{}".format(s[4], s[4], s[1]),
-            "not x{}, x{}".format(s[4], s[4]),
-            "and x{}, x{}, x{}".format(s[0], s[0], s[4]),
-            "and x{}, x{}, x{}".format(s[4], s[4], s[1]),
+            "srli x{}, x{}, {}".format(s[0], s[0], g),
+            "slli x{}, x{}, {}".format(s[0], s[0], g),
+            "slli x{}, x{}, 2".format(s[4], s[1]),
+            "srli x{}, x{}, 2".format(s[4], s[4]),
+            "srli x{}, x{}, {}".format(s[4], s[4], g),
+            "slli x{}, x{}, {}".format(s[4], s[4], g),
             "bne x{}, x{}, 18b".format(s[0], s[4]),
             "j 26f",
+            # address match: check whether the lock bit is set
             "26: nop",
             "andi x{}, x{}, 128".format(s[4], s[3]),
             "bnez x{}, 27f".format(s[4]),
             "j 29f"))
-        def skip_faulting_instr(check_main):
-            seq = ["27: csrr x{}, {}".format(s[0], mepc)]
-            if check_main:
-                seq += ["la x{}, main".format(s[4]),
-                        "bge x{}, x{}, 40f".format(s[0], s[4]),
-                        "la x{}, test_done".format(s[0]),
-                        "jalr x0, x{}, 0".format(s[0]),
-                        "40: lw x{}, 0(x{})".format(s[0], s[0])]
-            else:
-                seq += ["lw x{}, 0(x{})".format(s[0], s[0])]
-            seq += ["li x{}, 3".format(s[4]),
+
+        def skip_faulting_instr():
+            return ["lw x{}, 0(x{})".format(s[0], s[0]),
+                    "li x{}, 3".format(s[4]),
                     "and x{}, x{}, x{}".format(s[0], s[0], s[4]),
                     "beq x{}, x{}, 28f".format(s[0], s[4]),
                     "csrr x{}, {}".format(s[0], mepc),
@@ -463,26 +435,30 @@ class riscv_pmp_cfg:
                     "addi x{}, x{}, 4".format(s[0], s[0]),
                     "csrw {}, x{}".format(mepc, s[0]),
                     "j 34f"]
-            return seq
         if fault_type == exception_cause_t.INSTRUCTION_ACCESS_FAULT:
             instr.extend(("27: la x{}, test_done".format(s[0]),
-                          "jalr x0, x{}, 0".format(s[0])))
-            check_bit, set_bits = 4, 4
+                          "jalr x0, x{}, 0".format(s[0]),
+                          "29: ori x{}, x{}, 4".format(s[3], s[3])))
         elif fault_type == exception_cause_t.STORE_AMO_ACCESS_FAULT:
-            instr.extend(skip_faulting_instr(check_main=False))
-            # W=1 with R=0 is reserved, so granting write grants read too.
-            check_bit, set_bits = 2, 3
+            instr.append("27: csrr x{}, {}".format(s[0], mepc))
+            instr.extend(skip_faulting_instr())
+            # W:1 with R:0 is reserved, so enabling write enables read too
+            instr.append("29: ori x{}, x{}, 3".format(s[3], s[3]))
         elif fault_type == exception_cause_t.LOAD_ACCESS_FAULT:
-            instr.extend(skip_faulting_instr(check_main=True))
-            check_bit, set_bits = 1, 1
+            instr.extend(("27: csrr x{}, {}".format(s[0], mepc),
+                          # MEPC before main: the fault happened in a trap handler
+                          "la x{}, main".format(s[4]),
+                          "bge x{}, x{}, 40f".format(s[0], s[4]),
+                          "la x{}, test_done".format(s[0]),
+                          "jalr x0, x{}, 0".format(s[0])))
+            seq = skip_faulting_instr()
+            seq[0] = "40: " + seq[0]
+            instr.extend(seq)
+            instr.append("29: ori x{}, x{}, 1".format(s[3], s[3]))
         else:
             logging.critical("Invalid PMP fault type")
             sys.exit(1)
         instr.extend((
-            # Access already granted: PMP did not cause this fault.
-            "29: andi x{}, x{}, {}".format(s[4], s[3], check_bit),
-            "bnez x{}, 36b".format(s[4]),
-            "ori x{}, x{}, {}".format(s[3], s[3], set_bits),
             "li x{}, {}".format(s[4], xlen - clog),
             "sll x{}, x{}, x{}".format(s[0], s[6], s[4]),
             "srl x{}, x{}, x{}".format(s[0], s[0], s[4]),
