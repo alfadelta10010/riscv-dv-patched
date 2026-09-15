@@ -492,8 +492,9 @@ class riscv_instr_gen_config:
             weights = {2: [6, 4], 3: [4, 3, 3]}.get(len(modes), [1])
             self.init_privileged_mode = random.choices(modes[:len(weights)], weights)[0]
             self.init_privil_mode = self.init_privileged_mode
-            self.invalid_priv_mode_csrs = []
-            self.get_invalid_priv_lvl_csr()
+            # The SV computes invalid_priv_mode_csrs once, in new(), from the
+            # boot mode known there (the +boot_mode option or the enum
+            # default), and does not recompute it after randomization.
 
     def get_non_reserved_gpr(self):
         pass
