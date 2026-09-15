@@ -2061,54 +2061,59 @@ class riscv_instr_pkg:
         return string
 
     # Push general purpose register to stack, this is needed before trap handling
+    # Push general purpose registers onto the kernel stack before trap handling.
+    # Ported line for line from src/riscv_instr_pkg.sv push_gpr_to_kernel_stack:
+    # the user stack pointer is pushed onto the kernel stack through tp, and no
+    # CSR is accessed.
     def push_gpr_to_kernel_stack(self, status, scratch, mprv, sp, tp, instr):
         store_instr = "sw" if rcs.XLEN == 32 else "sd"
         if scratch in rcs.implemented_csr:
-            # Use kernal stack for handling exceptions. Save the user mode stack
-            # pointer to the scratch register
-            instr.extend(("csrrw x{}, {}, x{}".format(sp, hex(scratch), sp),
-                          # Move TP to SP
-                          "add x{}, x{}, zero".format(sp, tp)))
-        # If MPRV is set and MPP is S/U mode, it means the address translation and
-        # memory protection for load/store instruction is the same as the mode indicated
-        # by MPP. In this case, we need to use the virtual address to access the kernel stack.
-        if(status == privileged_reg_t.MSTATUS and rcs.SATP_MODE != satp_mode_t.BARE):
-            # We temporarily use tp to check mstatus to avoid changing other GPR. The value
-            # of sp has been saved to xScratch and can be restored later.
+            # Push USP from gpr.SP onto the kernel stack
+            instr.append("addi x{}, x{}, -4".format(tp, tp))
+            instr.append("{}  x{}, (x{})".format(store_instr, sp, tp))
+            # Move KSP to gpr.SP
+            instr.append("add x{}, x{}, zero".format(sp, tp))
+        # If MPRV is set and MPP is S/U mode, it means the address translation and memory
+        # protection for load/store instruction is the same as the mode indicated by MPP. In
+        # this case, we need to use the virtual address to access the kernel stack.
+        if status == privileged_reg_t.MSTATUS and rcs.SATP_MODE != satp_mode_t.BARE:
+            # We temporarily use tp to check mstatus to avoid changing other GPR.
+            # (The value of sp has been pushed to the kernel stack, so can be recovered later)
             if mprv:
-                instr.extend(("csrr x{}, {} // MSTATUS".format(tp, hex(status)),
-                              "srli x{}, x{}, 11".format(tp, tp),  # Move MPP to bit 0
-                              "andi x{}, x{}, 0x3".format(tp, tp),  # keep the MPP bits
-                              # Check if MPP equals to M-mode('b11)
-                              "xori x{}, x{}, 0x3".format(tp, tp),
-                              # Use physical address for kernel SP
-                              "bnez x{}, 1f".format(tp),
-                              # Use virtual address for stack pointer
-                              "slli x{}, x{}, {}".format(sp, sp,
-                                                         rcs.XLEN - self.MAX_USED_VADDR_BITS),
-                              "srli x{}, x{}, {}".format(sp, sp,
-                                                         rcs.XLEN - self.MAX_USED_VADDR_BITS)))
-        # Reserve space from kernel stack to save all 32 GPR except for x0
-        instr.append("1: addi x{}, x{}, -{}".format(sp, sp, 31 * (rcs.XLEN // 8)))
-        # Push all GPRs to kernel stack
+                instr.append("csrr x{}, {} // MSTATUS".format(tp, hex(status)))
+                instr.append("srli x{}, x{}, 11".format(tp, tp))  # Move MPP to bit 0
+                instr.append("andi x{}, x{}, 0x3".format(tp, tp))  # keep the MPP bits
+                # Check if MPP equals to M-mode('b11)
+                instr.append("xori x{}, x{}, 0x3".format(tp, tp))
+                instr.append("bnez x{}, 1f".format(tp))  # Use physical address for kernel SP
+                # Use virtual address for stack pointer
+                instr.append("slli x{}, x{}, {}".format(sp, sp, rcs.XLEN - self.MAX_USED_VADDR_BITS))
+                instr.append("srli x{}, x{}, {}".format(sp, sp, rcs.XLEN - self.MAX_USED_VADDR_BITS))
+                instr.append("1: nop")
+        # Push all GPRs (except for x0) to kernel stack
+        # (gpr.SP currently holds the KSP)
+        instr.append("addi x{}, x{}, -{}".format(sp, sp, 32 * (rcs.XLEN // 8)))
         for i in range(1, 32):
-            instr.append("{} x{}, {}(x{})".format(
-                store_instr, i, i * (rcs.XLEN // 8), sp))
+            instr.append("{}  x{}, {}(x{})".format(store_instr, i, i * (rcs.XLEN // 8), sp))
+        # Move KSP back to gpr.TP
+        # (this is needed if we again take a interrupt (nested) before restoring our USP)
+        instr.append("add x{}, x{}, zero".format(tp, sp))
 
-    # Pop general purpose register from stack, this is needed before returning to user program
+    # Pop general purpose registers from the kernel stack before returning to the
+    # interrupted program (src/riscv_instr_pkg.sv pop_gpr_from_kernel_stack).
     def pop_gpr_from_kernel_stack(self, status, scratch, mprv, sp, tp, instr):
         load_instr = "lw" if rcs.XLEN == 32 else "ld"
-        # Pop user mode GPRs from kernel stack
+        # Move KSP to gpr.SP
+        instr.append("add x{}, x{}, zero".format(sp, tp))
+        # Pop GPRs from kernel stack
         for i in range(1, 32):
-            instr.append("{} x{}, {}(x{})".format(
-                load_instr, i, i * (rcs.XLEN // 8), sp))
-        # Restore kernel stack pointer
-        instr.append("addi x{}, x{}, {}".format(sp, sp, 31 * (rcs.XLEN // 8)))
+            instr.append("{}  x{}, {}(x{})".format(load_instr, i, i * (rcs.XLEN // 8), sp))
+        instr.append("addi x{}, x{}, {}".format(sp, sp, 32 * (rcs.XLEN // 8)))
         if scratch in rcs.implemented_csr:
-            # Move SP to TP
-            instr.extend(("add x{}, x{}, zero".format(tp, sp),
-                          # Restore user mode stack pointer
-                          "csrrw x{}, {}, x{}".format(sp, hex(scratch), sp)))
-
+            # Move KSP back to gpr.TP
+            instr.append("add x{}, x{}, zero".format(tp, sp))
+            # Pop USP from the kernel stack, move back to gpr.SP
+            instr.append("{}  x{}, (x{})".format(load_instr, sp, tp))
+            instr.append("addi x{}, x{}, 4".format(tp, tp))
 
 pkg_ins = riscv_instr_pkg()
