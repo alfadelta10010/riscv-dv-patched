@@ -74,6 +74,12 @@ Each is explained in its commit.
   * `riscv_jal_instr` jump rd (SV `dist` weights);
   * `randomize_gpr` operands: a soft constraint towards a uniformly drawn legal
     register, which every instruction-specific hard constraint overrides.
+* Random forward branches never land past a sub-program call: the start of
+  each call stream is a branch target and a branch is clamped to it. The SV
+  lets a taken branch skip the call and its whole subtree. This branch is
+  tuned to expose the most core defects; `sv-faithful` keeps the SV
+  behaviour. Same-seed programs: executed body 53.6% -> 72.4%, sub-programs
+  entered 72 -> 110 of 110.
 
 ## Assembly audit of `ea5573d`
 
